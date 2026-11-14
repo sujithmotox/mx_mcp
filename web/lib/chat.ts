@@ -10,6 +10,7 @@ import type {
 import { SYSTEM_PROMPT, settings } from "./config";
 import { type ChatEvent, parseTable, tableFromText } from "./events";
 import { connectMcp } from "./mcpClient";
+import { CHART_TOOL_NAME, ChartSpec, chartTool } from "./chartTool";
 
 const anthropic = new Anthropic(); // reads ANTHROPIC_API_KEY
 
@@ -49,6 +50,20 @@ function handleStop(msg: BetaMessage, emit: Emit): "continue" | "stop" | "refuse
   }
 }
 
+/** Handle render_chart locally: validate the spec and send it to the browser. */
+function runChartTool(id: string, input: unknown, emit: Emit): { text: string; isError: boolean } {
+  const parsed = ChartSpec.safeParse(input);
+  if (!parsed.success) {
+    const text = `Chart not drawn: ${parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ")}`;
+    emit({ type: "tool_result", id, isError: true, text });
+    return { text, isError: true };
+  }
+  emit({ type: "chart", id, spec: parsed.data });
+  const text = `Chart "${parsed.data.title}" is now shown to the user. Do not repeat its numbers in full; summarise what it shows.`;
+  emit({ type: "tool_result", id, isError: false, text });
+  return { text, isError: false };
+}
+
 /**
  * MCP_MODE=local: this server is the MCP client. We list the MCP tools, hand
  * them to Claude as regular tools, and execute each tool call against MCP.
@@ -66,6 +81,7 @@ async function runLocal(messages: BetaMessageParam[], emit: Emit) {
         input_schema: t.inputSchema as BetaTool["input_schema"],
         eager_input_streaming: true,
       }));
+    tools.push({ ...chartTool, eager_input_streaming: true });
 
     for (let step = 0; step < settings.maxSteps; step++) {
       const stream = anthropic.beta.messages.stream({ ...baseParams(), betas: [FALLBACK_BETA], tools, messages });
@@ -81,6 +97,11 @@ async function runLocal(messages: BetaMessageParam[], emit: Emit) {
       for (const block of msg.content) {
         if (block.type !== "tool_use") continue;
         emit({ type: "tool_call", id: block.id, name: block.name, input: block.input });
+        if (block.name === CHART_TOOL_NAME) {
+          const r = runChartTool(block.id, block.input, emit);
+          results.push({ type: "tool_result", tool_use_id: block.id, content: r.text, is_error: r.isError });
+          continue;
+        }
         let text: string;
         let isError = false;
         let table;
@@ -125,7 +146,7 @@ async function runConnector(messages: BetaMessageParam[], emit: Emit) {
       mcp_servers: [
         { type: "url", url: settings.mcpPublicUrl, name: "db", authorization_token: settings.mcpApiKey },
       ],
-      tools: [{ type: "mcp_toolset", mcp_server_name: "db" }],
+      tools: [{ type: "mcp_toolset", mcp_server_name: "db" }, { ...chartTool, eager_input_streaming: true }],
       messages,
     });
     streamText(stream, emit);
@@ -141,6 +162,22 @@ async function runConnector(messages: BetaMessageParam[], emit: Emit) {
     const stop = handleStop(msg, emit);
     if (stop === "refused") return false;
     messages.push({ role: "assistant", content: asParam(msg.content) });
+    if (stop === "stop") return true;
+    if (msg.stop_reason === "tool_use") {
+      // Only render_chart runs here; MCP tools run on Anthropic's side.
+      const results: BetaToolResultBlockParam[] = [];
+      for (const block of msg.content) {
+        if (block.type !== "tool_use") continue;
+        emit({ type: "tool_call", id: block.id, name: block.name, input: block.input });
+        const r =
+          block.name === CHART_TOOL_NAME
+            ? runChartTool(block.id, block.input, emit)
+            : { text: `Unknown tool ${block.name}.`, isError: true };
+        results.push({ type: "tool_result", tool_use_id: block.id, content: r.text, is_error: r.isError });
+      }
+      messages.push({ role: "user", content: results });
+      continue;
+    }
     // pause_turn: the server paused a long turn; send it back to let it continue.
     if (msg.stop_reason !== "pause_turn") return true;
   }

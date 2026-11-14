@@ -11,6 +11,7 @@ export type ChatEvent =
   | { type: "text"; text: string }
   | { type: "tool_call"; id: string; name: string; input: unknown }
   | { type: "tool_result"; id: string; isError: boolean; text: string; table?: TableData }
+  | { type: "chart"; id: string; spec: import("./chartTool").ChartSpec }
   | { type: "notice"; message: string }
   | { type: "error"; message: string }
   // The full conversation to send back on the next turn, unchanged.

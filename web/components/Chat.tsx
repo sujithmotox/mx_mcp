@@ -5,10 +5,13 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChatEvent, TableData } from "@/lib/events";
 import { ResultTable } from "./ResultTable";
+import { ChartView } from "./ChartView";
+import type { ChartSpec } from "@/lib/chartTool";
 
 type Part =
   | { kind: "text"; text: string }
   | { kind: "tool"; id: string; name: string; input: unknown; result?: { isError: boolean; text: string; table?: TableData } }
+  | { kind: "chart"; id: string; spec: ChartSpec }
   | { kind: "notice"; text: string }
   | { kind: "error"; text: string };
 
@@ -18,7 +21,7 @@ const SUGGESTIONS = [
   "What was our revenue by month this year?",
   "Top 5 products by units sold in the last 90 days",
   "Which countries have the most customers?",
-  "Show the latest orders for customer 12",
+  "Chart the number of enquiries per month this year",
 ];
 
 function apply(parts: Part[], e: ChatEvent): Part[] {
@@ -30,7 +33,11 @@ function apply(parts: Part[], e: ChatEvent): Part[] {
       else next.push({ kind: "text", text: e.text });
       break;
     case "tool_call":
-      next.push({ kind: "tool", id: e.id, name: e.name, input: e.input });
+      // Chart calls show as the chart itself, not as a tool card.
+      if (e.name !== "render_chart") next.push({ kind: "tool", id: e.id, name: e.name, input: e.input });
+      break;
+    case "chart":
+      next.push({ kind: "chart", id: e.id, spec: e.spec });
       break;
     case "tool_result": {
       const i = next.findIndex((p) => p.kind === "tool" && p.id === e.id);
@@ -152,6 +159,8 @@ export function Chat() {
                   </div>
                 ) : p.kind === "tool" ? (
                   <ToolCard key={j} part={p} />
+                ) : p.kind === "chart" ? (
+                  <ChartView key={j} spec={p.spec} />
                 ) : (
                   <div key={j} className={p.kind}>{p.text}</div>
                 ),
