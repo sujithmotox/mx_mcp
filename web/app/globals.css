@@ -44,7 +44,18 @@ header button { background: none; border: 1px solid var(--border); color: var(--
 .suggestions button:hover { border-color: var(--accent); }
 .msg-user { align-self: flex-end; background: var(--user); color: var(--user-text); padding: 10px 14px; border-radius: 14px 14px 4px 14px; max-width: 80%; white-space: pre-wrap; }
 .msg-assistant { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.text { overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol { margin: 0 0 10px; }
+.md ul, .md ol { padding-left: 22px; }
+.md li { margin: 2px 0; }
+.md h1, .md h2, .md h3 { font-size: 16px; margin: 14px 0 6px; }
+.md code { font-family: var(--mono); font-size: 13px; background: var(--accent-soft); padding: 1px 4px; border-radius: 4px; }
+.md pre { background: var(--accent-soft); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
+.md pre code { background: none; padding: 0; }
+.md table { width: auto; margin: 4px 0 12px; border: 1px solid var(--border); border-radius: 8px; display: block; overflow-x: auto; }
+.md th { position: static; }
 .notice { color: var(--muted); font-style: italic; }
 .error { color: var(--error); }
 .tool { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }

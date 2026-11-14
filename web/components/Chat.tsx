@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ChatEvent, TableData } from "@/lib/events";
 import { ResultTable } from "./ResultTable";
 
@@ -145,7 +147,9 @@ export function Chat() {
             <div className="msg-assistant">
               {turn.parts.map((p, j) =>
                 p.kind === "text" ? (
-                  <div key={j} className="text">{p.text}</div>
+                  <div key={j} className="text md">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{p.text}</ReactMarkdown>
+                  </div>
                 ) : p.kind === "tool" ? (
                   <ToolCard key={j} part={p} />
                 ) : (
