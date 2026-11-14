@@ -3,7 +3,7 @@
 import { MessageSquare, Moon, PanelLeftClose, Plus, Sun, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Conversation } from "@/lib/conversation";
-import { Logo } from "./Logo";
+import { LogoFull } from "./Logo";
 
 function groupChats(list: Conversation[]) {
   const now = new Date();
@@ -77,10 +77,9 @@ export function Sidebar({
   return (
     <aside className="flex h-full w-72 flex-col border-r border-line bg-panel">
       <div className="flex items-center gap-2.5 px-4 py-4">
-        <Logo />
         <div className="leading-tight">
-          <div className="font-semibold">MotoXchange</div>
-          <div className="text-xs text-muted">Data assistant</div>
+          <LogoFull className="h-6 w-auto text-fg" />
+          <div className="mt-1 pl-[33px] text-[11px] font-medium uppercase tracking-wider text-muted">Data assistant</div>
         </div>
         <button type="button" onClick={onClose} className="ml-auto rounded-md p-1.5 text-muted hover:bg-panel-2 hover:text-fg lg:hidden" aria-label="Close sidebar">
           <PanelLeftClose className="size-4" />
