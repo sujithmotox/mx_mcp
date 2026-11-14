@@ -11,108 +11,87 @@ Browser ──► web/ (Next.js)  ──► Claude API (claude-opus-5-5)
                └──── MCP (HTTP) ◄────┘
                         │
                  mcp-server/ (Node + Express, /mcp)
-                        │  read-only user, SELECT only
+                        │  read-only, SELECT only
                         ▼
                       MySQL
 ```
 
-## What's inside
+## Run it on your laptop
 
-| Path | What it is |
-|---|---|
-| `db/readonly-user.sql` | Creates a SELECT-only MySQL user for **your** database. Edit and run it as an admin. |
-| `db/init/` | Sample `shop` schema, seed data and read-only user for docker-compose. |
-| `mcp-server/` | Node + TypeScript MCP server (`@modelcontextprotocol/sdk`, `mysql2`, `zod`), served over Streamable HTTP on `/mcp`. |
-| `web/` | Next.js (app router) chat. `app/api/chat/route.ts` calls Claude with the MCP tools and streams the reply. |
-| `docker-compose.yml` | MySQL + MCP server + web, wired together. |
+You need Node 20 or newer, network access to your MySQL, and an Anthropic API key
+(https://console.anthropic.com).
 
-### MCP tools
+**1. MCP server** (terminal 1)
+
+```bash
+cd mcp-server
+npm install
+cp .env.example .env      # Windows: copy .env.example .env
+# edit .env: MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, MCP_API_KEYS
+npm run dev
+```
+
+It prints the tables it found and `mcp server listening`. Check it with
+`curl http://localhost:8080/health`.
+
+**2. Chat app** (terminal 2)
+
+```bash
+cd web
+npm install
+cp .env.example .env.local   # Windows: copy .env.example .env.local
+# edit .env.local: ANTHROPIC_API_KEY, and MCP_API_KEY = the same value as MCP_API_KEYS above
+npm run dev
+```
+
+Open http://localhost:3000 and ask a question.
+
+## Before you point it at real data
+
+- **Use a read-only MySQL user.** `db/readonly-user.sql` creates one (edit the database name and password first, and prefer table-level grants). For a quick test an existing user works, because the server also runs every connection as `READ ONLY` and only allows SELECT, but production should use the read-only user.
+- **Limit the tables.** Set `ALLOWED_TABLES=table1,table2` instead of `*`. Leave out tables with passwords, tokens or personal data, or expose a view without those columns.
+- **Protect the chat UI.** Anyone who can open it can read the allowed data. Set `WEB_BASIC_AUTH=user:password` in `web/.env.local`, or put it behind your own login.
+
+## MCP tools
 
 | Tool | Purpose |
 |---|---|
-| `describe_schema` | Tables, columns, types and foreign keys from `INFORMATION_SCHEMA` (allowlisted tables only). Also exposed as the resource `schema://database`. |
-| `find_customers`, `customer_orders`, `sales_summary`, `top_products` | Curated, parameterised example queries for the sample schema. See "Adapting to your database". |
+| `describe_schema` | Tables, columns, types, comments and foreign keys from `INFORMATION_SCHEMA` (allowed tables only). Also exposed as the resource `schema://database`. |
 | `run_select` | Free-form SQL, guarded (below). |
+| `find_customers`, `customer_orders`, `sales_summary`, `top_products` | Examples of curated, parameterised query tools. They only appear when tables with those names exist. |
 
 ### Safety layers
 
-1. **Database grant**: the MySQL user only has `SELECT` (on chosen tables, ideally).
+1. **Database grant**: the MySQL user only has `SELECT`.
 2. **Read-only session**: every pooled connection runs `SET SESSION TRANSACTION READ ONLY` and `max_execution_time`.
 3. **SQL guard** (`mcp-server/src/guard.ts`) on `run_select`:
    - one statement only, must be `SELECT` or `WITH … SELECT` (parsed with `node-sql-parser`)
-   - every referenced table must be in the allowlist; other databases and `mysql`/`information_schema`/… are blocked
+   - every referenced table must be allowed; other databases and `mysql`/`information_schema`/… are blocked
    - `INTO OUTFILE`, `LOAD_FILE`, `SLEEP`, `BENCHMARK`, locking clauses, etc. are rejected
    - `LIMIT` is added when missing, and a `LIMIT` above `QUERY_ROW_LIMIT` (500) is rejected
-4. **Timeouts**: `QUERY_TIMEOUT_MS` (5 s) server-side via `max_execution_time`, plus a client timeout.
-5. **Auth**: `Authorization: Bearer <key>` checked against `MCP_API_KEYS` (constant-time compare).
+4. **Timeouts**: `QUERY_TIMEOUT_MS` (5 s).
+5. **Auth**: `Authorization: Bearer <key>` checked against `MCP_API_KEYS`.
 6. **Rate limiting**: `RATE_LIMIT_MAX` requests per key per `RATE_LIMIT_WINDOW_MS`.
-7. **Query log**: every query (including rejected ones) is logged as one JSON line with the tool, SQL, params, row count, duration and a short fingerprint of the API key. Set `QUERY_LOG_FILE` to also write to a file.
+7. **Query log**: every query (including rejected ones) is logged as one JSON line. Set `QUERY_LOG_FILE` to also write it to a file.
 
-## Quick start (Docker, sample data)
+## Making answers better for your data
 
-```bash
-cp .env.example .env        # set ANTHROPIC_API_KEY and a random MCP_API_KEY
-docker compose up --build
-```
+- Add `COMMENT`s to important tables and columns. `describe_schema` passes them to the model.
+- Add business terms to the system prompt in `web/lib/config.ts` (for example "an active listing means status = 'live'").
+- Replace the example tools in `mcp-server/src/tools/curated.ts` with the questions your users ask most. Each entry lists the tables it needs, an input schema (zod) and a function that builds parameterised SQL. The model prefers these over `run_select`.
 
-Open http://localhost:3000 and try "What was our revenue by month this year?".
+## How the chat works
 
-## Running against your own database
+`web/app/api/chat/route.ts` streams newline-delimited JSON events (`text`, `tool_call`, `tool_result`, `notice`, `error`, `done`). By default (`MCP_MODE=local`) the Next.js server connects to the MCP server, gives its tools to Claude and runs each tool call. `MCP_MODE=connector` instead uses the Claude API's MCP connector, which needs the MCP server on a public HTTPS URL (`MCP_PUBLIC_URL`).
 
-1. **Create the read-only user.** Edit `db/readonly-user.sql` (database name, user, password; prefer table-level grants) and run it as an admin:
-   ```bash
-   mysql -h <host> -u root -p < db/readonly-user.sql
-   ```
-2. **Start the MCP server.**
-   ```bash
-   cd mcp-server
-   npm install
-   MYSQL_HOST=... MYSQL_DATABASE=... MYSQL_USER=mcp_reader MYSQL_PASSWORD=... \
-   MCP_API_KEYS=$(openssl rand -hex 32) ALLOWED_TABLES=customers,orders \
-   npm run dev
-   ```
-   It logs the tables it found on startup. Check `curl localhost:8080/health`.
-3. **Start the web app.**
-   ```bash
-   cd web
-   npm install
-   cat > .env.local <<EOF
-   ANTHROPIC_API_KEY=sk-ant-...
-   MCP_SERVER_URL=http://localhost:8080/mcp
-   MCP_API_KEY=<one of MCP_API_KEYS>
-   EOF
-   npm run dev
-   ```
-
-### Adapting to your database
-
-- `ALLOWED_TABLES` decides what the model can see and query. Start small. For sensitive columns, create a view without them, grant SELECT on the view, and allowlist the view instead of the table.
-- Curated tools live in `mcp-server/src/tools/curated.ts`. Each entry lists the tables it needs, an input schema (zod) and a function that builds parameterised SQL. A tool is only registered when all its tables exist and are allowlisted, so the shop examples disappear on another database. Replace them with the 3 to 10 questions your users ask most; the model prefers them over `run_select`.
-- Add `COMMENT`s to your tables and columns. `describe_schema` passes them to the model and they noticeably improve its SQL.
-- The system prompt is in `web/lib/config.ts`. Add business vocabulary there (for example "active customer means an order in the last 90 days").
-
-## How the chat works (`web/`)
-
-`MCP_MODE` picks how Claude reaches the MCP server:
-
-- **`local` (default)**: the Next.js server connects to the MCP server as an MCP client, lists its tools, passes them to Claude as tools, and runs each tool call. Works when the MCP server is private (localhost, docker network, VPC).
-- **`connector`**: uses the Claude API's MCP connector (`mcp_servers` + `mcp_toolset`, beta `mcp-client-2025-11-20`). Anthropic's servers call your MCP server directly, so it must be reachable over public HTTPS: set `MCP_PUBLIC_URL=https://your-host/mcp`, and put it behind TLS (a reverse proxy, or a tunnel while testing). Also set `ALLOWED_HOSTS` on the MCP server.
-
-Either way, `/api/chat` streams newline-delimited JSON events (`text`, `tool_call`, `tool_result`, `notice`, `error`, `done`) and the page renders tool results as tables with a CSV download.
-
-Details worth knowing:
-
-- Model `claude-opus-5-5` with adaptive thinking and `effort: medium` (set `CLAUDE_MODEL` / `CLAUDE_EFFORT` to change). Server-side fallback (`fallbacks: "default"`) is on, so a policy refusal is retried on a fallback model instead of failing.
-- The conversation is append-only: the server returns the full message history (including thinking blocks) in the `done` event and the browser sends it back unchanged. The system prompt and tool list never change mid-conversation. That keeps the prompt cache warm and keeps earlier thinking blocks valid.
-- Set `WEB_BASIC_AUTH=user:password` to put the UI behind basic auth. Anyone who can use the chat can read the allowlisted data, so protect it before exposing it.
+The model is `claude-opus-5-5` with adaptive thinking and `effort: medium` (`CLAUDE_MODEL` / `CLAUDE_EFFORT` to change). The conversation history is append-only and sent back unchanged each turn, which keeps the prompt cache warm.
 
 ## Development
 
 ```bash
-cd mcp-server && npm test        # SQL guard unit tests
-cd mcp-server && npm run typecheck
+cd mcp-server && npm test && npm run typecheck   # SQL guard tests
 cd web && npm run typecheck && npm run build
-node scripts/generate-seed.mjs > db/init/02-seed.sql   # regenerate sample data
 ```
 
-To try the MCP server from another MCP client (for example Claude Desktop or the MCP Inspector), point it at `http://localhost:8080/mcp` with header `Authorization: Bearer <key>`.
+To use the MCP server from another MCP client (Claude Desktop, MCP Inspector), point it at
+`http://localhost:8080/mcp` with header `Authorization: Bearer <key>`.

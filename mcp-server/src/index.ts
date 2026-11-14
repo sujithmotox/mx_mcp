@@ -1,3 +1,4 @@
+import "dotenv/config"; // loads mcp-server/.env
 import { createHash, timingSafeEqual } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { rateLimit } from "express-rate-limit";

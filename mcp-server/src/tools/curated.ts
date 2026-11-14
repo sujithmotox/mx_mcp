@@ -2,7 +2,7 @@
  * Curated tools: fixed, parameterised queries for the questions users ask most.
  *
  * They are safer and more predictable than free-form SQL, so the model is told
- * to prefer them. The examples below target the sample shop schema in db/init.
+ * to prefer them. The examples below target a generic shop schema (customers, products, orders, order_items).
  * To adapt them to your database, edit or replace the entries in CURATED_TOOLS:
  * each one lists the tables it needs and builds a SQL string with `?` params.
  * A tool is only exposed when all of its tables exist and are allowlisted, so
