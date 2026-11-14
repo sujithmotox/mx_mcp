@@ -1,0 +1,70 @@
+:root {
+  --bg: #f7f7f5;
+  --panel: #ffffff;
+  --text: #1d1d1b;
+  --muted: #6b6b66;
+  --border: #e3e2dc;
+  --accent: #c2410c;
+  --accent-soft: #fff3ec;
+  --user: #1d1d1b;
+  --user-text: #ffffff;
+  --error: #b42318;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615;
+    --panel: #1f1f1d;
+    --text: #ecebe6;
+    --muted: #9c9b95;
+    --border: #34332f;
+    --accent: #fb923c;
+    --accent-soft: #2a1d14;
+    --user: #ecebe6;
+    --user-text: #161615;
+    --error: #f97066;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.shell { max-width: 960px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; padding: 0 16px; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 18px 0 12px; border-bottom: 1px solid var(--border); }
+header h1 { font-size: 17px; margin: 0; }
+header button { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+.log { flex: 1; padding: 20px 0 140px; display: flex; flex-direction: column; gap: 18px; }
+.empty { color: var(--muted); margin-top: 40px; }
+.empty h2 { color: var(--text); font-size: 22px; margin: 0 0 8px; }
+.suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.suggestions button { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 999px; padding: 8px 14px; cursor: pointer; font: inherit; }
+.suggestions button:hover { border-color: var(--accent); }
+.msg-user { align-self: flex-end; background: var(--user); color: var(--user-text); padding: 10px 14px; border-radius: 14px 14px 4px 14px; max-width: 80%; white-space: pre-wrap; }
+.msg-assistant { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.notice { color: var(--muted); font-style: italic; }
+.error { color: var(--error); }
+.tool { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.tool summary { cursor: pointer; padding: 8px 12px; font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; list-style: none; }
+.tool summary::-webkit-details-marker { display: none; }
+.tool summary b { color: var(--text); font-family: var(--mono); font-weight: 600; }
+.tool .badge { margin-left: auto; font-size: 12px; }
+.tool .badge.err { color: var(--error); }
+.tool pre { margin: 0; padding: 10px 12px; font: 12.5px/1.5 var(--mono); background: var(--accent-soft); overflow-x: auto; white-space: pre-wrap; border-top: 1px solid var(--border); }
+.table-wrap { overflow: auto; max-height: 420px; border-top: 1px solid var(--border); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--panel); font-weight: 600; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.table-foot { display: flex; justify-content: space-between; padding: 6px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
+.table-foot button { background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; }
+form.composer { position: fixed; left: 0; right: 0; bottom: 0; background: linear-gradient(transparent, var(--bg) 30%); padding: 24px 16px 18px; }
+form.composer .inner { max-width: 928px; margin: 0 auto; display: flex; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 8px; }
+form.composer textarea { flex: 1; resize: none; border: none; outline: none; background: transparent; color: var(--text); font: inherit; padding: 6px 8px; min-height: 24px; max-height: 160px; }
+form.composer button { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 0 16px; font: inherit; font-weight: 600; cursor: pointer; }
+form.composer button:disabled { opacity: 0.5; cursor: default; }
+.dots::after { content: "…"; animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: 0.2; } }
