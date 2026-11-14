@@ -68,7 +68,7 @@ function runChartTool(id: string, input: unknown, emit: Emit): { text: string; i
  * MCP_MODE=local: this server is the MCP client. We list the MCP tools, hand
  * them to Claude as regular tools, and execute each tool call against MCP.
  */
-async function runLocal(messages: BetaMessageParam[], emit: Emit) {
+async function runLocal(messages: BetaMessageParam[], emit: Emit, signal?: AbortSignal) {
   const mcp = await connectMcp();
   try {
     const { tools: mcpTools } = await mcp.listTools();
@@ -84,7 +84,10 @@ async function runLocal(messages: BetaMessageParam[], emit: Emit) {
     tools.push({ ...chartTool, eager_input_streaming: true });
 
     for (let step = 0; step < settings.maxSteps; step++) {
-      const stream = anthropic.beta.messages.stream({ ...baseParams(), betas: [FALLBACK_BETA], tools, messages });
+      const stream = anthropic.beta.messages.stream(
+        { ...baseParams(), betas: [FALLBACK_BETA], tools, messages },
+        { signal },
+      );
       streamText(stream, emit);
       const msg = await stream.finalMessage();
 
@@ -137,7 +140,7 @@ async function runLocal(messages: BetaMessageParam[], emit: Emit) {
  * MCP_MODE=connector: Anthropic's API connects to the MCP server and runs the
  * tool calls itself. We only stream what happened.
  */
-async function runConnector(messages: BetaMessageParam[], emit: Emit) {
+async function runConnector(messages: BetaMessageParam[], emit: Emit, signal?: AbortSignal) {
   if (!settings.mcpPublicUrl) throw new Error("MCP_PUBLIC_URL must be set when MCP_MODE=connector.");
   for (let step = 0; step < settings.maxSteps; step++) {
     const stream = anthropic.beta.messages.stream({
@@ -148,7 +151,7 @@ async function runConnector(messages: BetaMessageParam[], emit: Emit) {
       ],
       tools: [{ type: "mcp_toolset", mcp_server_name: "db" }, { ...chartTool, eager_input_streaming: true }],
       messages,
-    });
+    }, { signal });
     streamText(stream, emit);
     stream.on("contentBlock", (block) => {
       if (block.type === "mcp_tool_use") emit({ type: "tool_call", id: block.id, name: block.name, input: block.input });
@@ -188,14 +191,14 @@ async function runConnector(messages: BetaMessageParam[], emit: Emit) {
  * Run one user turn. `history` is what the previous turn's "done" event returned,
  * sent back unchanged: the conversation is append-only.
  */
-export async function runTurn(history: BetaMessageParam[], userText: string, emit: Emit) {
+export async function runTurn(history: BetaMessageParam[], userText: string, emit: Emit, signal?: AbortSignal) {
   const today = new Date().toISOString().slice(0, 10);
   const messages: BetaMessageParam[] = [
     ...history,
     // The date goes in the user message (not the system prompt) so the prefix stays stable.
     { role: "user", content: [{ type: "text", text: `[Today is ${today}]\n${userText}` }] },
   ];
-  const kept = settings.mode === "connector" ? await runConnector(messages, emit) : await runLocal(messages, emit);
+  const kept = settings.mode === "connector" ? await runConnector(messages, emit, signal) : await runLocal(messages, emit, signal);
   // On a refusal, drop this turn so the user can rephrase.
   emit({ type: "done", history: kept ? messages : history });
 }

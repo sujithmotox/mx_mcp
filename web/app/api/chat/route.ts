@@ -31,14 +31,22 @@ export async function POST(req: Request) {
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const emit = (e: ChatEvent) => controller.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
+      const emit = (e: ChatEvent) => {
+        if (req.signal.aborted) return;
+        controller.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
+      };
       try {
-        await runTurn(history as BetaMessageParam[], message, emit);
+        await runTurn(history as BetaMessageParam[], message, emit, req.signal);
       } catch (err) {
+        if (req.signal.aborted) return; // the user pressed Stop
         console.error("chat turn failed", err);
         emit({ type: "error", message: describeError(err) });
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // already closed because the client went away
+        }
       }
     },
   });

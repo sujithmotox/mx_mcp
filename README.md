@@ -80,6 +80,14 @@ Open http://localhost:3000 and ask a question.
 - Add business terms to the system prompt in `web/lib/config.ts` (for example "an active listing means status = 'live'").
 - Replace the example tools in `mcp-server/src/tools/curated.ts` with the questions your users ask most. Each entry lists the tables it needs, an input schema (zod) and a function that builds parameterised SQL. The model prefers these over `run_select`.
 
+## Customising the chat UI
+
+- Welcome-screen questions: `web/components/suggestions.ts`
+- Colours (brand orange, light and dark themes, chart series): the tokens at the top of `web/app/globals.css`
+- Logo: `web/components/Logo.tsx`
+
+Chats are saved in the browser (localStorage), so each person sees only their own history.
+
 ## How the chat works
 
 `web/app/api/chat/route.ts` streams newline-delimited JSON events (`text`, `tool_call`, `tool_result`, `notice`, `error`, `done`). By default (`MCP_MODE=local`) the Next.js server connects to the MCP server, gives its tools to Claude and runs each tool call. `MCP_MODE=connector` instead uses the Claude API's MCP connector, which needs the MCP server on a public HTTPS URL (`MCP_PUBLIC_URL`).
