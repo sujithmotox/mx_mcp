@@ -27,7 +27,7 @@ export function formatDate(v: string): string | null {
 }
 
 const MONEY_COL = /(amount|price|total|revenue|payout|margin|value|cost|fee|gst|tcs|bid|paid|selling|purchase|deduction|commission)/i;
-const NOT_MONEY = /(_id$|^id$|count|_pct$|pct|percent|ratio|qty|quantity|kms?$|year|score|_no$)/i;
+const NOT_MONEY = /(_id$|^id$|count|bids$|^with_|^num_|^n_|^no_of|_pct$|pct|percent|ratio|qty|quantity|kms?$|year|score|_no$)/i;
 
 /** Heuristic: does this column hold rupee amounts? */
 export const isMoneyColumn = (name: string) => MONEY_COL.test(name) && !NOT_MONEY.test(name);

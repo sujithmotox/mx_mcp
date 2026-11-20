@@ -20,6 +20,7 @@ type Emit = (e: ChatEvent) => void;
 // on its default fallback model instead of returning a refusal.
 const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 const MCP_CONNECTOR_BETA = "mcp-client-2025-11-20";
+const BAD_TOOL_JSON = /Unable to parse tool parameter JSON/;
 
 const baseParams = () => ({
   model: settings.model,
@@ -89,17 +90,29 @@ async function runLocal(messages: BetaMessageParam[], emit: Emit, signal?: Abort
         name: t.name,
         description: t.description ?? "",
         input_schema: t.inputSchema as BetaTool["input_schema"],
-        eager_input_streaming: true,
       }));
-    tools.push({ ...chartTool, eager_input_streaming: true });
+    // No eager_input_streaming: the UI doesn't show partial tool input, and without it
+    // the API checks that tool input is valid JSON before sending it.
+    tools.push(chartTool);
 
+    let retried = false;
     for (let step = 0; step < settings.maxSteps; step++) {
-      const stream = anthropic.beta.messages.stream(
-        { ...baseParams(), betas: [FALLBACK_BETA], tools, messages },
-        { signal },
-      );
-      streamText(stream, emit);
-      const msg = await stream.finalMessage();
+      let msg: BetaMessage;
+      try {
+        const stream = anthropic.beta.messages.stream(
+          { ...baseParams(), betas: [FALLBACK_BETA], tools, messages },
+          { signal },
+        );
+        streamText(stream, emit);
+        msg = await stream.finalMessage();
+      } catch (err) {
+        // Rare: the model wrote tool input that isn't valid JSON. Ask again once.
+        if (retried || signal?.aborted || !BAD_TOOL_JSON.test((err as Error).message)) throw err;
+        retried = true;
+        emit({ type: "notice", message: "Claude's tool call was malformed, so it is being retried." });
+        step--;
+        continue;
+      }
 
       const stop = handleStop(msg, emit);
       if (stop === "refused") return false;
@@ -159,7 +172,7 @@ async function runConnector(messages: BetaMessageParam[], emit: Emit, signal?: A
       mcp_servers: [
         { type: "url", url: settings.mcpPublicUrl, name: "db", authorization_token: settings.mcpApiKey },
       ],
-      tools: [{ type: "mcp_toolset", mcp_server_name: "db" }, { ...chartTool, eager_input_streaming: true }],
+      tools: [{ type: "mcp_toolset", mcp_server_name: "db" }, chartTool],
       messages,
     }, { signal });
     streamText(stream, emit);
