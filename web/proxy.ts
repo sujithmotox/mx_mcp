@@ -8,6 +8,11 @@ import { NextResponse, type NextRequest } from "next/server";
 export function proxy(req: NextRequest) {
   const expected = process.env.WEB_BASIC_AUTH;
   if (!expected) return NextResponse.next();
+  // Embedded widgets carry their own per-widget token (?t=...), checked by the
+  // embed page and the widget data route. Nothing else is reachable this way.
+  const { pathname, searchParams } = req.nextUrl;
+  if (searchParams.has("t") && (/^\/embed\/[\w-]+$/.test(pathname) || /^\/api\/widgets\/[\w-]+\/data$/.test(pathname)))
+    return NextResponse.next();
   const header = req.headers.get("authorization") ?? "";
   if (header === `Basic ${btoa(expected)}`) return NextResponse.next();
   return new NextResponse("Authentication required", {

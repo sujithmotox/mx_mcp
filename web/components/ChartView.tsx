@@ -6,6 +6,7 @@ import {
   Download,
   LineChart as LineIcon,
   Maximize2,
+  Pin,
   Table2,
   X,
 } from "lucide-react";
@@ -81,16 +82,20 @@ function useWidth() {
   return [ref, w] as const;
 }
 
-function Plot({ spec, kind, tall }: { spec: ChartSpec; kind: Kind; tall?: boolean }) {
+type Size = "normal" | "tall" | "compact";
+
+function Plot({ spec, kind, size = "normal" }: { spec: ChartSpec; kind: Kind; size?: Size }) {
   const [boxRef, boxWidth] = useWidth();
   return (
     <div ref={boxRef}>
-      <PlotInner spec={spec} kind={kind} tall={tall} width={boxWidth} />
+      <PlotInner spec={spec} kind={kind} size={size} width={boxWidth} />
     </div>
   );
 }
 
-function PlotInner({ spec, kind, tall, width }: { spec: ChartSpec; kind: Kind; tall?: boolean; width: number }) {
+function PlotInner({ spec, kind, size, width }: { spec: ChartSpec; kind: Kind; size: Size; width: number }) {
+  const tall = size === "tall";
+  const compact = size === "compact";
   const rows = spec.labels.map((label, i) => {
     const row: Record<string, string | number | null> = { label };
     for (const s of spec.series) row[s.name] = s.values[i] ?? null;
@@ -109,7 +114,7 @@ function PlotInner({ spec, kind, tall, width }: { spec: ChartSpec; kind: Kind; t
     const data = spec.labels.map((name, i) => ({ name, value: s.values[i] ?? 0, fill: SERIES[i % 8] }));
     const total = data.reduce((a, d) => a + d.value, 0);
     return (
-      <ResponsiveContainer width="100%" height={tall ? 520 : 300}>
+      <ResponsiveContainer width="100%" height={tall ? 520 : compact ? 240 : 300}>
         <PieChart>
           <Pie data={data} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="85%" paddingAngle={1.5} stroke="var(--panel)" strokeWidth={2} isAnimationActive={false}>
             {data.map((d) => (
@@ -130,7 +135,15 @@ function PlotInner({ spec, kind, tall, width }: { spec: ChartSpec; kind: Kind; t
   const narrow = width < 520;
   const fontSize = narrow ? 11 : 12;
   const labelWidth = Math.min(longest * (narrow ? 6.2 : 7.2) + 12, width * (narrow ? 0.42 : 0.34), 280);
-  const height = tall ? 560 : horizontal ? Math.max(260, spec.labels.length * 30 + 70) : 320;
+  const height = tall
+    ? 560
+    : compact
+      ? horizontal
+        ? Math.min(Math.max(220, spec.labels.length * 26 + 60), 420)
+        : 240
+      : horizontal
+        ? Math.max(260, spec.labels.length * 30 + 70)
+        : 320;
   const showLabels = kind === "bar" && !multi && spec.labels.length <= 24;
 
   const refLines = refs.map((r) => (
@@ -317,7 +330,24 @@ function IconButton({ onClick, label, active, children }: { onClick: () => void;
   );
 }
 
-export function ChartView({ spec }: { spec: ChartSpec }) {
+export function ChartView({
+  spec,
+  onPin,
+  pinned,
+  compact,
+  actions,
+  subtitle,
+}: {
+  spec: ChartSpec;
+  /** Shown as a Pin button when the chart can be pinned to the dashboard. */
+  onPin?: () => void;
+  pinned?: boolean;
+  /** Smaller chart for dashboard widgets. */
+  compact?: boolean;
+  /** Extra toolbar buttons (the widget menu). */
+  actions?: React.ReactNode;
+  subtitle?: React.ReactNode;
+}) {
   const [kind, setKind] = useState<Kind>(spec.type === "pie" ? "bar" : spec.type);
   const [view, setView] = useState<"chart" | "table">("chart");
   const [full, setFull] = useState(false);
@@ -341,7 +371,7 @@ export function ChartView({ spec }: { spec: ChartSpec }) {
 
   const toolbar = (inFull: boolean) => (
     <div className="flex items-center gap-0.5">
-      {cartesian && view === "chart" && (
+      {cartesian && view === "chart" && (!compact || inFull) && (
         <div className="mr-1 flex items-center gap-0.5 rounded-lg border border-line p-0.5">
           {KIND_ICONS.map(({ kind: k, icon: Icon, label }) => (
             <IconButton key={k} onClick={() => setKind(k)} label={`${label} chart`} active={kind === k}>
@@ -353,10 +383,25 @@ export function ChartView({ spec }: { spec: ChartSpec }) {
       <IconButton onClick={() => setView(view === "chart" ? "table" : "chart")} label={view === "chart" ? "Show table" : "Show chart"} active={view === "table"}>
         <Table2 className="size-4" />
       </IconButton>
-      {view === "chart" && (
+      {view === "chart" && (!compact || inFull) && (
         <IconButton onClick={() => exportPng((inFull ? fullRef : ref).current!, spec)} label="Download PNG">
           <Download className="size-4" />
         </IconButton>
+      )}
+      {pinned && !inFull && (
+        <span className="ml-1 inline-flex items-center gap-1 rounded-md bg-brand-soft px-2 py-1 text-xs font-medium text-brand">
+          <Pin className="size-3.5 fill-current" /> Pinned
+        </span>
+      )}
+      {onPin && !pinned && !inFull && (
+        <button
+          type="button"
+          onClick={onPin}
+          className="ml-1 inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs font-medium text-muted transition hover:border-brand hover:text-brand"
+          title="Pin to dashboard"
+        >
+          <Pin className="size-3.5" /> Pin
+        </button>
       )}
       {inFull ? (
         <IconButton onClick={() => setFull(false)} label="Close">
@@ -367,6 +412,7 @@ export function ChartView({ spec }: { spec: ChartSpec }) {
           <Maximize2 className="size-4" />
         </IconButton>
       )}
+      {!inFull && actions}
     </div>
   );
 
@@ -377,6 +423,7 @@ export function ChartView({ spec }: { spec: ChartSpec }) {
         {(spec.y_label || spec.x_label) && (
           <p className="text-xs text-muted">{[spec.y_label, spec.x_label && `by ${spec.x_label}`].filter(Boolean).join(" ")}</p>
         )}
+        {subtitle}
         {spec.headline && (
           <div className="mt-2">
             <div className="text-xs uppercase tracking-wide text-muted">{spec.headline.label}</div>
@@ -390,10 +437,10 @@ export function ChartView({ spec }: { spec: ChartSpec }) {
 
   return (
     <>
-      <div className="overflow-hidden rounded-xl border border-line bg-panel shadow-sm">
+      <div className={`overflow-hidden rounded-xl border border-line bg-panel shadow-sm ${compact ? "h-full" : ""}`}>
         {header(false)}
         <div className="px-2 pb-3 pt-2" ref={ref}>
-          {view === "chart" ? <Plot spec={spec} kind={kind} /> : <div className="px-2"><DataTable table={table} name={spec.title} /></div>}
+          {view === "chart" ? <Plot spec={spec} kind={kind} size={compact ? "compact" : "normal"} /> : <div className="px-2"><DataTable table={table} name={spec.title} /></div>}
         </div>
       </div>
       {full && (
@@ -401,7 +448,7 @@ export function ChartView({ spec }: { spec: ChartSpec }) {
           <div className="max-h-full w-full max-w-6xl overflow-auto rounded-2xl border border-line bg-panel shadow-2xl" onClick={(e) => e.stopPropagation()}>
             {header(true)}
             <div className="px-2 pb-4 pt-2" ref={fullRef}>
-              {view === "chart" ? <Plot spec={spec} kind={kind} tall /> : <div className="px-2"><DataTable table={table} name={spec.title} /></div>}
+              {view === "chart" ? <Plot spec={spec} kind={kind} size="tall" /> : <div className="px-2"><DataTable table={table} name={spec.title} /></div>}
             </div>
           </div>
         </div>

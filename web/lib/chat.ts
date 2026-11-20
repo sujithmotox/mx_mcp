@@ -10,7 +10,7 @@ import type {
 import { SYSTEM_PROMPT, settings } from "./config";
 import { type ChatEvent, parseTable, tableFromText } from "./events";
 import { connectMcp } from "./mcpClient";
-import { CHART_TOOL_NAME, ChartSpec, chartTool } from "./chartTool";
+import { CHART_TOOL_NAME, ChartSource, ChartSpec, chartTool } from "./chartTool";
 
 const anthropic = new Anthropic(); // reads ANTHROPIC_API_KEY
 
@@ -52,6 +52,16 @@ function handleStop(msg: BetaMessage, emit: Emit): "continue" | "stop" | "refuse
 
 /** Handle render_chart locally: validate the spec and send it to the browser. */
 function runChartTool(id: string, input: unknown, emit: Emit): { text: string; isError: boolean } {
+  // A bad `source` only disables pinning; it should not stop the chart from being drawn.
+  let sourceNote = "";
+  if (input && typeof input === "object" && "source" in input) {
+    const src = ChartSource.safeParse((input as { source: unknown }).source);
+    if (!src.success) {
+      const { source: _drop, ...rest } = input as Record<string, unknown>;
+      input = rest;
+      sourceNote = " (Its source was invalid, so it cannot be pinned to the dashboard.)";
+    }
+  }
   const parsed = ChartSpec.safeParse(input);
   if (!parsed.success) {
     const text = `Chart not drawn: ${parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ")}`;
@@ -59,7 +69,7 @@ function runChartTool(id: string, input: unknown, emit: Emit): { text: string; i
     return { text, isError: true };
   }
   emit({ type: "chart", id, spec: parsed.data });
-  const text = `Chart "${parsed.data.title}" is now shown to the user. Do not repeat its numbers in full; summarise what it shows.`;
+  const text = `Chart "${parsed.data.title}" is now shown to the user.${sourceNote} Do not repeat its numbers in full; summarise what it shows.`;
   emit({ type: "tool_result", id, isError: false, text });
   return { text, isError: false };
 }

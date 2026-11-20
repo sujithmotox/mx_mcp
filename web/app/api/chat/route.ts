@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const Body = z.object({
-  message: z.string().trim().min(1).max(4000),
+  message: z.string().trim().min(1).max(20000),
   history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.unknown() })).max(400).default([]),
 });
 

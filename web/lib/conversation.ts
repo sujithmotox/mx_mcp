@@ -22,6 +22,8 @@ export type Turn = {
   /** API history before this turn, so the turn can be regenerated. */
   historyBefore: unknown[];
   status: "streaming" | "done" | "stopped" | "error";
+  /** What was actually sent when it differs from `user` (e.g. with dashboard context). */
+  apiMessage?: string;
 };
 
 export type Conversation = {

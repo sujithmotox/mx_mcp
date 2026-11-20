@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquare, Moon, PanelLeftClose, Plus, Sun, Trash2 } from "lucide-react";
+import { LayoutDashboard, MessageSquare, Moon, PanelLeftClose, Plus, Sun, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Conversation } from "@/lib/conversation";
 import { LogoFull } from "./Logo";
@@ -65,7 +65,13 @@ export function Sidebar({
   onNew,
   onDelete,
   onClose,
+  view,
+  onDashboard,
+  widgetCount,
 }: {
+  view: "dashboard" | "chat";
+  onDashboard: () => void;
+  widgetCount: number | null;
   chats: Conversation[];
   activeId: string | null;
   onSelect: (id: string) => void;
@@ -94,6 +100,14 @@ export function Sidebar({
           <Plus className="size-4" /> New chat
           <kbd className="ml-auto rounded border border-white/30 px-1.5 text-[10px] font-normal opacity-80">⌘K</kbd>
         </button>
+        <button
+          type="button"
+          onClick={onDashboard}
+          className={`mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${view === "dashboard" ? "bg-panel-2 font-medium text-fg" : "text-fg/80 hover:bg-panel-2/70"}`}
+        >
+          <LayoutDashboard className="size-4 text-muted" /> Dashboard
+          {widgetCount ? <span className="ml-auto rounded-full bg-panel-2 px-2 text-xs text-muted">{widgetCount}</span> : null}
+        </button>
       </div>
       <nav className="scrollbar-thin mt-4 flex-1 overflow-y-auto px-2 pb-4">
         {chats.length === 0 && <p className="px-3 text-sm text-muted">Your chats will appear here.</p>}
@@ -103,7 +117,7 @@ export function Sidebar({
             {g.items.map((c) => (
               <div
                 key={c.id}
-                className={`group flex items-center rounded-lg text-sm ${c.id === activeId ? "bg-panel-2 text-fg" : "text-fg/80 hover:bg-panel-2/70"}`}
+                className={`group flex items-center rounded-lg text-sm ${view === "chat" && c.id === activeId ? "bg-panel-2 text-fg" : "text-fg/80 hover:bg-panel-2/70"}`}
               >
                 <button type="button" onClick={() => onSelect(c.id)} className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left">
                   <MessageSquare className="size-3.5 shrink-0 text-muted" />

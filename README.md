@@ -80,6 +80,35 @@ Open http://localhost:3000 and ask a question.
 - Add business terms to the system prompt in `web/lib/config.ts` (for example "an active listing means status = 'live'").
 - Replace the example tools in `mcp-server/src/tools/curated.ts` with the questions your users ask most. Each entry lists the tables it needs, an input schema (zod) and a function that builds parameterised SQL. The model prefers these over `run_select`.
 
+## Dashboard (pinned charts)
+
+Every chart in the chat has a **Pin** button. A pinned chart becomes a widget on the
+**Dashboard**, which is the home screen once something is pinned.
+
+- **Live data, not a snapshot.** When Claude draws a chart it also records the database
+  tool call behind it (`source` in `render_chart`). A widget re-runs that call through the
+  MCP server every time the dashboard opens, so the read-only checks, table allowlist and
+  row limit all still apply, and no Claude call is needed. Results are cached for 30 s.
+- **Settings per widget:** title, chart or number tile (latest value or total, with a trend
+  line), size (small, medium, wide) and refresh (on open, every 5 minutes, hourly).
+- **Date filter:** the dashboard's range (last 7 days, this month, custom…) is applied to
+  widgets whose query was written with fixed dates. Widgets with rolling windows
+  (`CURDATE()`) are marked "Not date-filtered".
+- **Arrange:** drag a widget by its handle, or use Move earlier / later in its menu.
+- **Ask about this:** opens a new chat with the widget's query and current data attached.
+- **Storage:** widgets are saved in `web/data/widgets.json` on the web server (set
+  `WIDGETS_FILE` to move it). Everyone using the app sees the same dashboard. MySQL is not
+  written to. Back this file up if the dashboard matters.
+
+### Showing a widget in another app
+
+Set `WIDGET_EMBED_SECRET` (any long random string) in `web/.env.local` and restart. Each
+widget's menu then has **Copy embed code**, which copies an `<iframe>` for
+`/embed/<id>?t=<token>`. The token opens only that widget, and works even when
+`WEB_BASIC_AUTH` is on, so only use it on pages that are behind your own login. For a
+Next.js app, copy `examples/MxWidget.tsx` and use `<MxWidget baseUrl=… id=… token=… />`.
+Changing the secret invalidates every embed link.
+
 ## Customising the chat UI
 
 - Welcome-screen questions: `web/components/suggestions.ts`
@@ -90,7 +119,7 @@ Chats are saved in the browser (localStorage), so each person sees only their ow
 
 ## How the chat works
 
-`web/app/api/chat/route.ts` streams newline-delimited JSON events (`text`, `tool_call`, `tool_result`, `notice`, `error`, `done`). By default (`MCP_MODE=local`) the Next.js server connects to the MCP server, gives its tools to Claude and runs each tool call. `MCP_MODE=connector` instead uses the Claude API's MCP connector, which needs the MCP server on a public HTTPS URL (`MCP_PUBLIC_URL`).
+`web/app/api/chat/route.ts` streams newline-delimited JSON events (`text`, `tool_call`, `tool_result`, `chart`, `notice`, `error`, `done`). Widgets use `web/app/api/widgets/*`. By default (`MCP_MODE=local`) the Next.js server connects to the MCP server, gives its tools to Claude and runs each tool call. `MCP_MODE=connector` instead uses the Claude API's MCP connector, which needs the MCP server on a public HTTPS URL (`MCP_PUBLIC_URL`).
 
 The model is `claude-opus-5-5` with adaptive thinking and `effort: medium` (`CLAUDE_MODEL` / `CLAUDE_EFFORT` to change). The conversation history is append-only and sent back unchanged each turn, which keeps the prompt cache warm.
 

@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Copy, CornerDownRight, RotateCcw } from "lucide-r
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { ChartSpec } from "@/lib/chartTool";
 import { splitFollowups, type ToolPart, type Turn } from "@/lib/conversation";
 import { ChartView } from "./ChartView";
 import { DataTable } from "./DataTable";
@@ -23,11 +24,15 @@ export function AssistantTurn({
   isLast,
   onFollowup,
   onRegenerate,
+  onPin,
+  pinnedIds,
 }: {
   turn: Turn;
   isLast: boolean;
   onFollowup: (q: string) => void;
   onRegenerate: () => void;
+  onPin?: (spec: ChartSpec, chartId: string) => void;
+  pinnedIds?: Set<string>;
 }) {
   const [copied, setCopied] = useState(false);
   const streaming = turn.status === "streaming";
@@ -70,7 +75,15 @@ export function AssistantTurn({
               </div>
             );
           }
-          if (p.kind === "chart") return <ChartView key={p.id} spec={p.spec} />;
+          if (p.kind === "chart")
+            return (
+              <ChartView
+                key={p.id}
+                spec={p.spec}
+                pinned={pinnedIds?.has(p.id)}
+                onPin={p.spec.source && onPin && !streaming ? () => onPin(p.spec, p.id) : undefined}
+              />
+            );
           if (p.kind === "notice")
             return (
               <p key={i} className="flex items-center gap-2 text-sm text-muted">
