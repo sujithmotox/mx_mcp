@@ -22,12 +22,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (url.searchParams.has("from") || url.searchParams.has("to")) {
     const r = DateRangeQuery.safeParse({ from: url.searchParams.get("from"), to: url.searchParams.get("to") });
     if (!r.success) return Response.json({ error: "Invalid date range." }, { status: 400 });
-    if (widget.spec.source.date_from) range = r.data;
+    range = r.data;
   }
 
   try {
     const data = await widgetData(widget, range, url.searchParams.get("fresh") === "1");
-    return Response.json({ widget, data, dateFiltered: Boolean(range) }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ widget, data, dateFiltered: Boolean(range && data.window) }, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     const msg = (err as Error).message;
     const error = /ECONNREFUSED|fetch failed/i.test(msg) ? "Could not reach the MCP server." : msg;

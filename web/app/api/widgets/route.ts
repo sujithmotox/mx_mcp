@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ChartSource, ChartSpec } from "@/lib/chartTool";
+import { ChartSource, ChartSpec, inferDates } from "@/lib/chartTool";
 import { createWidget, embedToken, listWidgets, runSource, WidgetSettings } from "@/lib/widgets";
 
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   if (!source.success)
     return Response.json({ error: "This chart doesn't say which query made it, so it can't be pinned. Ask for the chart again." }, { status: 400 });
   try {
-    const data = await runSource(source.data);
+    const data = await runSource(inferDates(source.data));
     if (!data.labels.length) throw new Error("The query returned no rows.");
   } catch (err) {
     return Response.json({ error: `Couldn't re-run this chart's query: ${(err as Error).message}` }, { status: 422 });

@@ -15,7 +15,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts";
 import type { ChartSpec } from "@/lib/chartTool";
-import { api, type DateRange, formatValue, REFRESH_MS, timeAgo, type Widget, type WidgetData } from "@/lib/dashboard";
+import { api, type DateRange, formatValue, formatWindow, REFRESH_MS, timeAgo, type Widget, type WidgetData } from "@/lib/dashboard";
 import { formatDate } from "@/lib/format";
 import { ChartView } from "./ChartView";
 
@@ -146,7 +146,7 @@ function Shell({ title, subtitle, actions, children }: { title: string; subtitle
   );
 }
 
-function Status({ data, loading, dateFiltered, rangeActive, widget }: { data?: WidgetData; loading: boolean; dateFiltered: boolean; rangeActive: boolean; widget: Widget }) {
+function Status({ data, loading, dateFiltered, rangeActive }: { data?: WidgetData; loading: boolean; dateFiltered: boolean; rangeActive: boolean }) {
   const now = useNow();
   return (
     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted">
@@ -157,7 +157,8 @@ function Status({ data, loading, dateFiltered, rangeActive, widget }: { data?: W
       ) : (
         data && <span title={new Date(data.fetchedAt).toLocaleString()}>Updated {timeAgo(data.fetchedAt, now)}</span>
       )}
-      {rangeActive && !dateFiltered && widget.spec.source && !widget.spec.source.date_from && (
+      {data?.window && <span title="Dates this widget's query ran for">{formatWindow(data.window)}</span>}
+      {rangeActive && !dateFiltered && data && !data.window && (
         <span className="rounded bg-panel-2 px-1.5 py-px" title="This widget's query has no fixed dates, so the date filter doesn't change it.">
           Not date-filtered
         </span>
@@ -238,7 +239,7 @@ export function WidgetCard({
     </span>
   );
   const menu = <Menu widget={widget} actions={actions} reload={reload} data={data} />;
-  const status = <Status data={data} loading={loading} dateFiltered={dateFiltered} rangeActive={Boolean(range)} widget={widget} />;
+  const status = <Status data={data} loading={loading} dateFiltered={dateFiltered} rangeActive={Boolean(range)} />;
 
   if (error && !data)
     return (

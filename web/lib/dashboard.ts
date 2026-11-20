@@ -10,6 +10,8 @@ export type WidgetData = {
   rowCount: number;
   truncated: boolean;
   fetchedAt: number;
+  /** The dates the query ran for, when it has fixed dates. */
+  window?: DateRange;
 };
 
 // ---- API ----------------------------------------------------------------------
@@ -114,6 +116,17 @@ export function timeAgo(ms: number, now = Date.now()) {
   const h = Math.round(m / 60);
   if (h < 24) return `${h} h ago`;
   return new Date(ms).toLocaleDateString();
+}
+
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** 2026-11-07..2026-11-21 -> "7 – 21 Nov 2026" */
+export function formatWindow(w: DateRange) {
+  const [fy, fm, fd] = w.from.split("-").map(Number);
+  const [ty, tm, td] = w.to.split("-").map(Number);
+  if (w.from === w.to) return `${td} ${MON[tm - 1]} ${ty}`;
+  if (fy === ty && fm === tm) return `${fd} – ${td} ${MON[tm - 1]} ${ty}`;
+  if (fy === ty) return `${fd} ${MON[fm - 1]} – ${td} ${MON[tm - 1]} ${ty}`;
+  return `${fd} ${MON[fm - 1]} ${fy} – ${td} ${MON[tm - 1]} ${ty}`;
 }
 
 /** A short CSV of the widget's current data, for "Ask about this". */

@@ -10,7 +10,7 @@ import type {
 import { SYSTEM_PROMPT, settings } from "./config";
 import { type ChatEvent, parseTable, tableFromText } from "./events";
 import { connectMcp } from "./mcpClient";
-import { CHART_TOOL_NAME, ChartSource, ChartSpec, chartTool } from "./chartTool";
+import { CHART_TOOL_NAME, ChartSource, ChartSpec, chartTool, inferDates } from "./chartTool";
 
 const anthropic = new Anthropic(); // reads ANTHROPIC_API_KEY
 
@@ -69,7 +69,8 @@ function runChartTool(id: string, input: unknown, emit: Emit): { text: string; i
     emit({ type: "tool_result", id, isError: true, text });
     return { text, isError: true };
   }
-  emit({ type: "chart", id, spec: parsed.data });
+  const spec = parsed.data.source ? { ...parsed.data, source: inferDates(parsed.data.source) } : parsed.data;
+  emit({ type: "chart", id, spec });
   const text = `Chart "${parsed.data.title}" is now shown to the user.${sourceNote} Do not repeat its numbers in full; summarise what it shows.`;
   emit({ type: "tool_result", id, isError: false, text });
   return { text, isError: false };
@@ -214,12 +215,29 @@ async function runConnector(messages: BetaMessageParam[], emit: Emit, signal?: A
  * Run one user turn. `history` is what the previous turn's "done" event returned,
  * sent back unchanged: the conversation is append-only.
  */
-export async function runTurn(history: BetaMessageParam[], userText: string, emit: Emit, signal?: AbortSignal) {
+export async function runTurn(
+  history: BetaMessageParam[],
+  userText: string,
+  emit: Emit,
+  signal?: AbortSignal,
+  imageFileIds: string[] = [],
+) {
   const today = new Date().toISOString().slice(0, 10);
+  const note = imageFileIds.length
+    ? `[The user attached ${imageFileIds.length === 1 ? "an image" : `${imageFileIds.length} images`} above as a reference.]\n`
+    : "";
   const messages: BetaMessageParam[] = [
     ...history,
-    // The date goes in the user message (not the system prompt) so the prefix stays stable.
-    { role: "user", content: [{ type: "text", text: `[Today is ${today}]\n${userText}` }] },
+    {
+      role: "user",
+      content: [
+        // Images first, then the text. They are referenced by Files API id, so the
+        // bytes aren't re-sent with every later turn.
+        ...imageFileIds.map((file_id) => ({ type: "image" as const, source: { type: "file" as const, file_id } })),
+        // The date goes in the user message (not the system prompt) so the prefix stays stable.
+        { type: "text" as const, text: `[Today is ${today}]\n${note}${userText}` },
+      ],
+    },
   ];
   const kept = settings.mode === "connector" ? await runConnector(messages, emit, signal) : await runLocal(messages, emit, signal);
   // On a refusal, drop this turn so the user can rephrase.

@@ -24,6 +24,8 @@ export type Turn = {
   status: "streaming" | "done" | "stopped" | "error";
   /** What was actually sent when it differs from `user` (e.g. with dashboard context). */
   apiMessage?: string;
+  /** Reference images sent with this message: a small thumbnail plus the Files API id. */
+  images?: { thumb: string; fileId: string }[];
 };
 
 export type Conversation = {

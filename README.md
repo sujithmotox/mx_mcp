@@ -91,6 +91,10 @@ Every chart in the chat has a **Pin** button. A pinned chart becomes a widget on
   row limit all still apply, and no Claude call is needed. Results are cached for 30 s.
 - **Settings per widget:** title, chart or number tile (latest value or total, with a trend
   line), size (small, medium, wide) and refresh (on open, every 5 minutes, hourly).
+- **Keep dates moving** (on by default): a widget whose query uses fixed dates slides them
+  forward by the days since it was pinned, so a 6–20 Nov chart shows 7–21 Nov the next day.
+  The app reads the dates from the SQL (`>= '…'`, `< '…'`, `BETWEEN`) when Claude didn't
+  list them. Each widget shows the dates it ran for. Turn it off in the widget's Edit dialog.
 - **Date filter:** the dashboard's range (last 7 days, this month, custom…) is applied to
   widgets whose query was written with fixed dates. Widgets with rolling windows
   (`CURDATE()`) are marked "Not date-filtered".
@@ -108,6 +112,17 @@ widget's menu then has **Copy embed code**, which copies an `<iframe>` for
 `WEB_BASIC_AUTH` is on, so only use it on pages that are behind your own login. For a
 Next.js app, copy `examples/MxWidget.tsx` and use `<MxWidget baseUrl=… id=… token=… />`.
 Changing the secret invalidates every embed link.
+
+## Reference images
+
+Attach a screenshot of a chart (📎 button, paste, or drag it onto the chat) and ask Claude to
+build the same chart from your data; sending just the image works too. Up to 4 images per
+message, PNG/JPG/GIF/WebP, 5 MB each; large ones are shrunk in the browser first.
+
+Images are uploaded once to the Anthropic Files API (`web/app/api/uploads/route.ts`) and the
+chat refers to them by file id, so they aren't re-sent with every later message. They expire
+after 90 days, after which that chat can't be continued (start a new one). Claude draws the
+chart from real query results, never from numbers in the image, and says what it couldn't copy.
 
 ## Customising the chat UI
 

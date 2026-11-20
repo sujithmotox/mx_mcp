@@ -37,7 +37,10 @@ export function PinDialog({
   initial,
   onSubmit,
   onClose,
+  hasDates,
 }: {
+  /** The chart's query uses fixed dates, so they can move forward each day. */
+  hasDates?: boolean;
   mode: "pin" | "edit";
   initial: WidgetSettings;
   onSubmit: (s: WidgetSettings) => Promise<void>;
@@ -141,6 +144,23 @@ export function PinDialog({
             ]}
           />
         </Field>
+
+        {hasDates && (
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={s.rollDates !== false}
+              onChange={(e) => set("rollDates", e.target.checked)}
+              className="mt-0.5 size-4 accent-[var(--brand)]"
+            />
+            <span>
+              <span className="block text-sm font-medium">Keep dates moving</span>
+              <span className="block text-xs text-muted">
+                The query uses fixed dates. Slide them forward each day, so a 6–20 Nov chart shows 7–21 Nov tomorrow. Turn off to keep exactly these dates.
+              </span>
+            </span>
+          </label>
+        )}
 
         {error && <p className="rounded-lg border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger">{error}</p>}
 

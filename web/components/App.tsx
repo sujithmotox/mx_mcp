@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, LayoutDashboard, Menu, MessageSquareText, Plus, Square, X } from "lucide-react";
+import { AlertTriangle, ArrowUp, ImagePlus, LayoutDashboard, Loader2, Menu, MessageSquareText, Paperclip, Plus, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   applyEvent,
@@ -10,9 +10,10 @@ import {
   saveConversations,
   type Turn,
 } from "@/lib/conversation";
-import type { ChartSpec } from "@/lib/chartTool";
+import { type ChartSpec, inferDates } from "@/lib/chartTool";
 import { api, dataAsCsv, type Widget, type WidgetData, type WidgetSettings } from "@/lib/dashboard";
 import type { ChatEvent } from "@/lib/events";
+import { type Attachment, imagesFrom, MAX_IMAGES, prepareImage, uploadImage } from "@/lib/images";
 import { AssistantTurn, UserBubble } from "./AssistantTurn";
 import { Dashboard } from "./Dashboard";
 import { PinDialog } from "./PinDialog";
@@ -46,6 +47,30 @@ export function App() {
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [askContext, setAskContext] = useState<AskContext | null>(null);
   const [toast, setToast] = useState<{ text: string; action?: () => void } | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploading = attachments.some((a) => a.status === "uploading");
+  const readyImages = attachments.filter((a) => a.status === "ready" && a.fileId);
+
+  async function addImages(files: File[]) {
+    const room = MAX_IMAGES - attachments.length;
+    if (room <= 0) return setToast({ text: `You can attach up to ${MAX_IMAGES} images.` });
+    if (files.length > room) setToast({ text: `Only the first ${room} image${room > 1 ? "s were" : " was"} added (max ${MAX_IMAGES}).` });
+    for (const file of files.slice(0, room)) {
+      const id = newId();
+      try {
+        const { blob, thumb, name } = await prepareImage(file);
+        setAttachments((a) => [...a, { id, name, thumb, status: "uploading" }]);
+        uploadImage(blob, name)
+          .then((fileId) => setAttachments((a) => a.map((x) => (x.id === id ? { ...x, status: "ready", fileId } : x))))
+          .catch((err) => setAttachments((a) => a.map((x) => (x.id === id ? { ...x, status: "error", error: (err as Error).message } : x))));
+      } catch (err) {
+        setToast({ text: (err as Error).message });
+      }
+    }
+    textareaRef.current?.focus();
+  }
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -99,6 +124,7 @@ export function App() {
     setActiveId(null);
     setView("chat");
     setAskContext(null);
+    setAttachments([]);
     setInput("");
     setSidebarOpen(false);
     setTimeout(() => textareaRef.current?.focus(), 0);
@@ -129,9 +155,12 @@ export function App() {
     t.style.height = Math.min(t.scrollHeight, 200) + "px";
   }, [input]);
 
-  async function send(text: string, opts: { regenerate?: boolean; apiMessage?: string } = {}) {
-    const message = text.trim();
-    if (!message || busy) return;
+  async function send(text: string, opts: { regenerate?: boolean; apiMessage?: string; images?: Turn["images"] } = {}) {
+    if (busy || uploading) return;
+    const images: Turn["images"] = opts.images ?? (opts.regenerate ? undefined : readyImages.map((a) => ({ thumb: a.thumb, fileId: a.fileId! })));
+    // An image on its own is a request to rebuild that chart.
+    const message = text.trim() || (images?.length ? "Make this chart with our data." : "");
+    if (!message) return;
 
     let chatId = activeId;
     let history: unknown[] = [];
@@ -146,7 +175,7 @@ export function App() {
     const context = !opts.regenerate && askContext ? askContext.text : "";
     const apiMessage = context ? `${context}\n\n${message}` : message;
     if (context) setAskContext(null);
-    const turn: Turn = { user: message, parts: [], historyBefore: history, status: "streaming", apiMessage: opts.apiMessage ?? (context ? apiMessage : undefined) };
+    const turn: Turn = { user: message, parts: [], historyBefore: history, status: "streaming", apiMessage: opts.apiMessage ?? (context ? apiMessage : undefined), images: images?.length ? images : undefined };
     if (!chatId || !base) {
       chatId = newId();
       const conv: Conversation = { id: chatId, title: titleFrom(message), updatedAt: Date.now(), turns: [turn], history: [] };
@@ -167,6 +196,7 @@ export function App() {
       setChats((cs) => cs.map((c) => (c.id === id ? { ...c, turns: c.turns.map((t, i) => (i === c.turns.length - 1 ? fn(t) : t)) } : c)));
 
     setInput("");
+    if (!opts.regenerate) setAttachments([]);
     setBusy(true);
     stick.current = true;
     const controller = new AbortController();
@@ -177,7 +207,7 @@ export function App() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: opts.apiMessage ?? apiMessage, history }),
+        body: JSON.stringify({ message: opts.apiMessage ?? apiMessage, history, images: (images ?? []).map((i) => ({ fileId: i.fileId })) }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error(res.status === 401 ? "Not signed in." : `Request failed (${res.status})`);
@@ -215,7 +245,7 @@ export function App() {
 
   const regenerate = () => {
     const last = active?.turns[active.turns.length - 1];
-    if (last) send(last.user, { regenerate: true, apiMessage: last.apiMessage });
+    if (last) send(last.user, { regenerate: true, apiMessage: last.apiMessage, images: last.images });
   };
 
   return (
@@ -249,7 +279,31 @@ export function App() {
       </div>
       {sidebarOpen && <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} />}
 
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main
+        className="relative flex min-w-0 flex-1 flex-col"
+        onDragOver={(e) => {
+          if (view !== "chat" || !e.dataTransfer.types.includes("Files")) return;
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+        }}
+        onDrop={(e) => {
+          if (view !== "chat") return;
+          e.preventDefault();
+          setDragging(false);
+          addImages(imagesFrom(e.dataTransfer.files));
+        }}
+      >
+        {dragging && (
+          <div className="pointer-events-none absolute inset-3 z-30 grid place-items-center rounded-2xl border-2 border-dashed border-brand bg-brand-soft/80 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-2 text-brand">
+              <ImagePlus className="size-8" />
+              <span className="font-medium">Drop a chart image to use as a reference</span>
+            </div>
+          </div>
+        )}
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-3 lg:px-6">
           <button type="button" onClick={() => setSidebarOpen(true)} className="rounded-md p-1.5 text-muted hover:bg-panel-2 lg:hidden" aria-label="Open sidebar">
             <Menu className="size-5" />
@@ -284,7 +338,7 @@ export function App() {
             <div className="mx-auto w-full max-w-4xl space-y-8 px-4 py-8 lg:px-8">
               {active.turns.map((t, i) => (
                 <div key={i} className="space-y-6">
-                  <UserBubble text={t.user} />
+                  <UserBubble text={t.user} images={t.images} />
                   <AssistantTurn
                     turn={t}
                     isLast={i === active.turns.length - 1}
@@ -312,6 +366,37 @@ export function App() {
               </span>
             </div>
           )}
+          {attachments.length > 0 && (
+            <div className="mx-auto mb-2 flex w-full max-w-4xl flex-wrap gap-2">
+              {attachments.map((a) => (
+                <div key={a.id} className="group/att relative" title={a.error ?? a.name}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={a.thumb} alt={a.name} className={`h-16 w-20 rounded-lg border object-cover ${a.status === "error" ? "border-danger opacity-60" : "border-line"}`} />
+                  {a.status === "uploading" && (
+                    <span className="absolute inset-0 grid place-items-center rounded-lg bg-black/35">
+                      <Loader2 className="size-5 animate-spin text-white" />
+                    </span>
+                  )}
+                  {a.status === "error" && (
+                    <span className="absolute inset-0 grid place-items-center rounded-lg">
+                      <AlertTriangle className="size-5 text-danger" />
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setAttachments((list) => list.filter((x) => x.id !== a.id))}
+                    className="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full bg-fg text-bg shadow"
+                    aria-label={`Remove ${a.name}`}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ))}
+              {attachments.some((a) => a.status === "error") && (
+                <p className="self-center text-xs text-danger">{attachments.find((a) => a.status === "error")?.error}</p>
+              )}
+            </div>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -319,13 +404,47 @@ export function App() {
             }}
             className="mx-auto flex w-full max-w-4xl items-end gap-2 rounded-2xl border border-line bg-panel p-2 shadow-sm focus-within:border-brand/60 focus-within:ring-4 focus-within:ring-brand/10"
           >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              multiple
+              hidden
+              onChange={(e) => {
+                addImages(imagesFrom(e.target.files));
+                e.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={attachments.length >= MAX_IMAGES}
+              className="grid size-10 shrink-0 place-items-center rounded-xl text-muted transition hover:bg-panel-2 hover:text-fg disabled:opacity-40"
+              aria-label="Attach a reference image"
+              title="Attach a chart image as a reference (or paste / drop one)"
+            >
+              <Paperclip className="size-5" />
+            </button>
             <textarea
               ref={textareaRef}
               rows={1}
               value={input}
               autoFocus
-              placeholder={askContext ? "What do you want to know about this chart?" : "Ask about auctions, enquiries, payments…"}
+              placeholder={
+                askContext
+                  ? "What do you want to know about this chart?"
+                  : attachments.length
+                    ? "What should I build from this image? (or just press Enter)"
+                    : "Ask about auctions, enquiries, payments…"
+              }
               onChange={(e) => setInput(e.target.value)}
+              onPaste={(e) => {
+                const files = imagesFrom(e.clipboardData?.items);
+                if (files.length) {
+                  e.preventDefault();
+                  addImages(files);
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
@@ -347,7 +466,8 @@ export function App() {
             ) : (
               <button
                 type="submit"
-                disabled={!input.trim()}
+                disabled={uploading || (!input.trim() && readyImages.length === 0)}
+                title={uploading ? "Waiting for the image to upload" : undefined}
                 className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand text-brand-fg transition hover:brightness-110 disabled:opacity-40"
                 aria-label="Send"
               >
@@ -368,7 +488,9 @@ export function App() {
             display: "chart",
             numberMode: "last",
             refresh: "open",
+            rollDates: true,
           }}
+          hasDates={Boolean(pinning.spec.source && inferDates(pinning.spec.source).date_from)}
           onClose={() => setPinning(null)}
           onSubmit={pin}
         />

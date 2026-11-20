@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { type ChartSource, ChartSpec } from "./chartTool";
+import { addDays, type ChartSource, ChartSpec, inferDates } from "./chartTool";
 import { parseTable } from "./events";
 import { connectMcp } from "./mcpClient";
 
@@ -19,6 +19,8 @@ export const WidgetSettings = z.object({
   /** For display=number: show the last value or the total of the first series. */
   numberMode: z.enum(["last", "total"]),
   refresh: z.enum(["open", "5m", "1h"]),
+  /** Slide the query's fixed dates forward by the days since pinning (missing = on). */
+  rollDates: z.boolean().optional(),
 });
 export type WidgetSettings = z.infer<typeof WidgetSettings>;
 
@@ -70,7 +72,7 @@ export function createWidget(settings: WidgetSettings, spec: Widget["spec"]) {
     const now = new Date().toISOString();
     const id = Math.random().toString(36).slice(2, 8) + Date.now().toString(36);
     const { headline: _h, ...rest } = spec; // a headline is a one-off sentence that goes stale
-    const w: Widget = { ...settings, id, spec: rest as Widget["spec"], createdAt: now, updatedAt: now };
+    const w: Widget = { ...settings, id, spec: { ...rest, source: inferDates(spec.source) } as Widget["spec"], createdAt: now, updatedAt: now };
     await writeAll([w, ...all]);
     return w;
   });
@@ -109,12 +111,36 @@ export function reorderWidgets(ids: string[]) {
 }
 
 // ---- Running a widget's source --------------------------------------------------
-/** Swap the date literals the query was written with for the dashboard's range. */
-function withRange(source: ChartSource, range?: DateRange) {
-  let args = JSON.stringify(source.arguments);
-  if (range && source.date_from) args = args.replaceAll(source.date_from, range.from);
-  if (range && source.date_to) args = args.replaceAll(source.date_to, range.to);
-  return JSON.parse(args) as Record<string, unknown>;
+const localDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 864e5);
+
+/** The dates a widget shows now: the dashboard filter, else its pinned dates moved forward. */
+export function effectiveWindow(w: Widget, range?: DateRange): DateRange | undefined {
+  const src = inferDates(w.spec.source); // widgets pinned before dates were inferred
+  if (!src.date_from || !src.date_to) return undefined;
+  if (range) return range;
+  const shift = w.rollDates === false ? 0 : Math.max(0, daysBetween(localDate(new Date(w.createdAt)), localDate(new Date())));
+  return { from: addDays(src.date_from, shift), to: addDays(src.date_to, shift) };
+}
+
+/**
+ * Rewrite the query's date literals for a window. The first day is swapped
+ * directly; the last day may be written inclusively ('to') or as the day after
+ * ('to + 1', for `col < '...'`), and both forms are handled.
+ */
+function withWindow(source: ChartSource, win?: DateRange) {
+  const json = JSON.stringify(source.arguments);
+  if (!win || !source.date_from || !source.date_to) return source.arguments;
+  if (win.from === source.date_from && win.to === source.date_to) return source.arguments;
+  const map = new Map([
+    [source.date_from, win.from],
+    [source.date_to, win.to],
+    [addDays(source.date_to, 1), addDays(win.to, 1)],
+  ]);
+  // Only touch quoted dates ('2026-11-06' or '2026-11-06 00:00:00').
+  const out = json.replace(/'(\d{4}-\d{2}-\d{2})/g, (m, d: string) => (map.has(d) ? `'${map.get(d)}` : m));
+  return JSON.parse(out) as Record<string, unknown>;
 }
 
 function toNumber(v: unknown): number | null {
@@ -148,8 +174,8 @@ async function callTool(name: string, args: Record<string, unknown>) {
   }
 }
 
-export async function runSource(source: ChartSource, range?: DateRange) {
-  const res = await callTool(source.tool, withRange(source, range));
+export async function runSource(source: ChartSource, win?: DateRange) {
+  const res = await callTool(source.tool, withWindow(source, win));
     const content = (res.content ?? []) as { type: string; text?: string }[];
     const text = content.map((c) => c.text ?? "").join("\n");
     if (res.isError) throw new Error(text || "The query failed.");
@@ -181,14 +207,15 @@ const CACHE_MS = 30_000;
 const cache = new Map<string, { at: number; data: Awaited<ReturnType<typeof runSource>> }>();
 
 export async function widgetData(w: Widget, range?: DateRange, fresh = false) {
-  const key = `${w.id}|${w.updatedAt}|${range?.from ?? ""}|${range?.to ?? ""}`;
+  const win = effectiveWindow(w, range);
+  const key = `${w.id}|${w.updatedAt}|${win?.from ?? ""}|${win?.to ?? ""}`;
   const hit = cache.get(key);
-  if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return { ...hit.data, fetchedAt: hit.at };
-  const data = await runSource(w.spec.source, range);
+  if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return { ...hit.data, fetchedAt: hit.at, window: win };
+  const data = await runSource(inferDates(w.spec.source), win);
   const at = Date.now();
   cache.set(key, { at, data });
   if (cache.size > 500) cache.delete(cache.keys().next().value!);
-  return { ...data, fetchedAt: at };
+  return { ...data, fetchedAt: at, window: win };
 }
 
 // ---- Embedding -------------------------------------------------------------------

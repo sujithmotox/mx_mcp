@@ -71,7 +71,8 @@ export const chartTool: BetaTool = {
     "pin the chart to their dashboard, where it re-runs that call for fresh data. Do the formatting and maths in SQL " +
     "(DATE_FORMAT for labels, ratios, ORDER BY) so the result columns are exactly what the chart shows. When the query covers " +
     "a fixed date range, set date_from and date_to to the first and last day included, written in the SQL as " +
-    "col >= 'date_from' AND col < DATE_ADD('date_to', INTERVAL 1 DAY) so the dashboard's date filter can swap them. " +
+    "col >= 'date_from' AND col < DATE_ADD('date_to', INTERVAL 1 DAY), and always set date_from and date_to whenever the SQL " +
+    "contains fixed dates, so pinned widgets can move their dates forward each day and the dashboard's date filter can swap them. " +
     "For rolling windows use CURDATE() in SQL instead and omit date_from/date_to.",
   input_schema: {
     type: "object",
@@ -131,3 +132,34 @@ export const chartTool: BetaTool = {
     required: ["type", "title", "labels", "series"],
   },
 };
+
+// ---- Dates in a chart's query ---------------------------------------------------
+export function addDays(iso: string, n: number) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Fill in date_from / date_to when Claude wrote fixed dates in the SQL but didn't
+ * declare them, e.g. `col >= '2026-11-06' AND col < '2026-11-21'` gives
+ * 2026-11-06 .. 2026-11-20. Leaves the source alone when it can't tell.
+ */
+export function inferDates(source: ChartSource): ChartSource {
+  if (source.date_from && source.date_to) return source;
+  const text = JSON.stringify(source.arguments);
+  const D = `'(\\d{4}-\\d{2}-\\d{2})(?:[ T][\\d:.]+)?'`;
+  const lows: string[] = [];
+  const highs: string[] = [];
+  for (const m of text.matchAll(new RegExp(`(>=|>)\\s*${D}`, "g"))) lows.push(m[2]);
+  for (const m of text.matchAll(new RegExp(`(<=|<)\\s*${D}`, "g"))) highs.push(m[1] === "<" ? addDays(m[2], -1) : m[2]);
+  for (const m of text.matchAll(new RegExp(`BETWEEN\\s+${D}\\s+AND\\s+${D}`, "gi"))) {
+    lows.push(m[1]);
+    highs.push(m[2]);
+  }
+  for (const m of text.matchAll(new RegExp(`DATE_ADD\\(\\s*${D}\\s*,\\s*INTERVAL\\s+1\\s+DAY\\s*\\)`, "gi"))) highs.push(m[1]);
+  if (!lows.length || !highs.length) return source;
+  const from = lows.sort()[0];
+  const to = highs.sort().at(-1)!;
+  return from <= to ? { ...source, date_from: source.date_from ?? from, date_to: source.date_to ?? to } : source;
+}

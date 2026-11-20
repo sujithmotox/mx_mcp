@@ -11,10 +11,18 @@ import { DataTable } from "./DataTable";
 import { Logo } from "./Logo";
 import { Steps } from "./Steps";
 
-export function UserBubble({ text }: { text: string }) {
+export function UserBubble({ text, images }: { text: string; images?: { thumb: string }[] }) {
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-fg px-4 py-2.5 text-bg">{text}</div>
+    <div className="flex flex-col items-end gap-2">
+      {images && images.length > 0 && (
+        <div className="flex max-w-[85%] flex-wrap justify-end gap-2">
+          {images.map((im, i) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={i} src={im.thumb} alt={`Reference image ${i + 1}`} className="h-28 max-w-56 rounded-xl border border-line object-cover shadow-sm" />
+          ))}
+        </div>
+      )}
+      {text && <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-fg px-4 py-2.5 text-bg">{text}</div>}
     </div>
   );
 }

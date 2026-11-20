@@ -10,12 +10,16 @@ export const maxDuration = 300;
 
 const Body = z.object({
   message: z.string().trim().min(1).max(20000),
+  // Reference images, already uploaded through /api/uploads.
+  images: z.array(z.object({ fileId: z.string().regex(/^file_[A-Za-z0-9_-]{4,120}$/) })).max(4).default([]),
   history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.unknown() })).max(400).default([]),
 });
 
 function describeError(err: unknown): string {
   if (err instanceof Anthropic.AuthenticationError) return "The Anthropic API key is missing or invalid.";
   if (err instanceof Anthropic.RateLimitError) return "Claude is rate limited right now. Try again in a moment.";
+  if (err instanceof Anthropic.NotFoundError && /file/i.test(err.message))
+    return "An image in this chat is no longer available (uploads expire after 90 days). Start a new chat.";
   if (err instanceof Anthropic.BadRequestError) return `Claude rejected the request: ${err.message}`;
   if (err instanceof Anthropic.APIError) return `Claude API error (${err.status ?? "network"}): ${err.message}`;
   const msg = err instanceof Error ? err.message : String(err);
@@ -26,7 +30,7 @@ function describeError(err: unknown): string {
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Invalid request body" }, { status: 400 });
-  const { message, history } = parsed.data;
+  const { message, history, images } = parsed.data;
 
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
@@ -36,7 +40,7 @@ export async function POST(req: Request) {
         controller.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
       };
       try {
-        await runTurn(history as BetaMessageParam[], message, emit, req.signal);
+        await runTurn(history as BetaMessageParam[], message, emit, req.signal, images.map((i) => i.fileId));
       } catch (err) {
         if (req.signal.aborted) return; // the user pressed Stop
         console.error("chat turn failed", err);
