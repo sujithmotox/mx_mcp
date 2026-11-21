@@ -21,6 +21,18 @@ type Emit = (e: ChatEvent) => void;
 const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 const MCP_CONNECTOR_BETA = "mcp-client-2025-11-20";
 const BAD_TOOL_JSON = /Unable to parse tool parameter JSON/;
+const STALE_THINKING = /signature.{0,40}thinking|thinking.{0,80}(bound to a different conversation|signature)/i;
+const isThinking = (b: unknown) => {
+  const t = (b as { type?: string })?.type;
+  return t === "thinking" || t === "redacted_thinking";
+};
+const hasThinking = (h: BetaMessageParam[]) => h.some((m) => Array.isArray(m.content) && m.content.some(isThinking));
+/** The history with every thinking block removed (assistant turns left empty are dropped with their partner). */
+function withoutThinking(h: BetaMessageParam[]): BetaMessageParam[] {
+  return h.map((m) =>
+    m.role === "assistant" && Array.isArray(m.content) ? { ...m, content: m.content.filter((b) => !isThinking(b)) } : m,
+  ).filter((m) => !(Array.isArray(m.content) && m.content.length === 0 && m.role === "assistant"));
+}
 
 const baseParams = () => ({
   model: settings.model,
@@ -239,7 +251,19 @@ export async function runTurn(
       ],
     },
   ];
-  const kept = settings.mode === "connector" ? await runConnector(messages, emit, signal) : await runLocal(messages, emit, signal);
+  const run = (m: BetaMessageParam[]) => (settings.mode === "connector" ? runConnector(m, emit, signal) : runLocal(m, emit, signal));
+  let kept: boolean;
+  try {
+    kept = await run(messages);
+  } catch (err) {
+    // Thinking blocks are signed against the tool list. When the app's tools change (an update,
+    // a new chart type), chats saved before that are rejected. Earlier turns' thinking isn't
+    // needed, so drop it from the history and try once more.
+    if (signal?.aborted || !STALE_THINKING.test((err as Error).message) || !hasThinking(history)) throw err;
+    messages.splice(0, history.length, ...withoutThinking(history));
+    history = messages.slice(0, -1);
+    kept = await run(messages);
+  }
   // On a refusal, drop this turn so the user can rephrase.
   emit({ type: "done", history: kept ? messages : history });
 }
