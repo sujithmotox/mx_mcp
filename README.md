@@ -80,6 +80,25 @@ Open http://localhost:3000 and ask a question.
 - Add business terms to the system prompt in `web/lib/config.ts` (for example "an active listing means status = 'live'").
 - Replace the example tools in `mcp-server/src/tools/curated.ts` with the questions your users ask most. Each entry lists the tables it needs, an input schema (zod) and a function that builds parameterised SQL. The model prefers these over `run_select`.
 
+## Chart types
+
+Ask for any of these by name, or let Claude pick from the data:
+
+| Type | Good for | Example ask |
+|---|---|---|
+| Bar, line, area, pie | Comparing categories, trends over time, parts of a whole (6 or fewer slices) | "Bids per day this month" |
+| Heat map | Two categories × one number | "Auctions by weekday and hour as a heat map" |
+| Coloured table | Exact numbers, with cells shaded by value or a small bar in the cell | "Top 20 dealers as a table, shade the revenue" |
+| Bars + line | Two measures of different size in one chart (left and right axis) | "Auctions as bars and conversion % as a line" |
+| Funnel | Stages in order, with % kept at each step | "Funnel from listed to bid to sold" |
+| Scatter | Two numbers per item, coloured by group | "Scatter of base price vs top bid by make" |
+| Sankey | Flows between stages | "Sankey from city to make to auction result" |
+
+Every type can be pinned, refreshes on the dashboard, follows the date filter and "keep dates
+moving", has a table view, and works in light, dark and on phones. Number tiles are only
+offered for bar, line, area, pie, bars + line and funnel. A sankey drops any link that would
+make a loop. Two y-axes are easy to misread, so Claude only uses bars + line when asked.
+
 ## Dashboard (pinned charts)
 
 Every chart in the chat has a **Pin** button. A pinned chart becomes a widget on the

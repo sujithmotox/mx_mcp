@@ -34,55 +34,11 @@ import type { ChartSpec } from "@/lib/chartTool";
 import { download, inrCompact, inrFull, numCompact, numFull, slug } from "@/lib/format";
 import { DataTable } from "./DataTable";
 
-// Categorical slots in fixed order (light/dark steps live in globals.css).
-const SERIES = Array.from({ length: 8 }, (_, i) => `var(--series-${i + 1})`);
+import { axis, ChartTooltip, fmt, type Kind, SERIES, type Size, useWidth } from "./chartKit";
+import { ChartBody, hasSvg, NEW_TYPES } from "./charts";
+import { specToTable } from "@/lib/chartData";
 
-type Kind = "bar" | "line" | "area";
 
-function fmt(spec: ChartSpec, full: boolean) {
-  return (v: unknown) => {
-    if (typeof v !== "number") return String(v ?? "—");
-    if (spec.value_format === "percent") return `${+v.toFixed(1)}%`;
-    if (spec.value_format === "inr") return full ? inrFull(v) : inrCompact(v);
-    return full ? numFull(v) : numCompact(v);
-  };
-}
-
-function ChartTooltip({ active, payload, label, spec }: any) {
-  if (!active || !payload?.length) return null;
-  const f = fmt(spec, true);
-  return (
-    <div className="min-w-40 rounded-lg border border-line bg-panel px-3 py-2 text-sm shadow-lg">
-      {label !== undefined && <div className="mb-1 font-medium">{label}</div>}
-      {payload.map((p: any) => (
-        <div key={p.dataKey ?? p.name} className="flex items-center justify-between gap-4">
-          <span className="flex items-center gap-1.5 text-muted">
-            <span className="size-2.5 rounded-sm" style={{ background: p.payload?.fill ?? p.color }} />
-            {p.name}
-          </span>
-          <span className="font-medium tabular-nums">{f(p.value)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-const axis = { stroke: "var(--line)", tick: { fill: "var(--muted)", fontSize: 12 }, tickLine: false } as const;
-
-function useWidth() {
-  const ref = useRef<HTMLDivElement>(null);
-  const [w, setW] = useState(800);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([e]) => setW(e.contentRect.width));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return [ref, w] as const;
-}
-
-type Size = "normal" | "tall" | "compact";
 
 function Plot({ spec, kind, size = "normal" }: { spec: ChartSpec; kind: Kind; size?: Size }) {
   const [boxRef, boxWidth] = useWidth();
@@ -275,7 +231,8 @@ async function exportPng(container: HTMLElement, spec: ChartSpec) {
   const muted = css.getPropertyValue("--muted").trim() || "#666";
   const scale = 2;
   const pad = 24;
-  const legendH = spec.series.length > 1 && spec.type !== "pie" ? 28 : 0;
+  // Recharts draws its own legend for these; the export adds one for the basic types only.
+  const legendH = spec.series.length > 1 && (spec.type === "bar" || spec.type === "line" || spec.type === "area") ? 28 : 0;
   const headH = 56;
   const canvas = document.createElement("canvas");
   canvas.width = (w + pad * 2) * scale;
@@ -348,7 +305,7 @@ export function ChartView({
   actions?: React.ReactNode;
   subtitle?: React.ReactNode;
 }) {
-  const [kind, setKind] = useState<Kind>(spec.type === "pie" ? "bar" : spec.type);
+  const [kind, setKind] = useState<Kind>(spec.type === "line" || spec.type === "area" ? spec.type : "bar");
   const [view, setView] = useState<"chart" | "table">("chart");
   const [full, setFull] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -361,13 +318,10 @@ export function ChartView({
     return () => window.removeEventListener("keydown", onKey);
   }, [full]);
 
-  const table = {
-    columns: ["label", ...spec.series.map((s) => s.name)],
-    rows: spec.labels.map((label, i) => Object.fromEntries([["label", label], ...spec.series.map((s) => [s.name, s.values[i]])])),
-    rowCount: spec.labels.length,
-    truncated: false,
-  };
-  const cartesian = spec.type !== "pie";
+  const table = specToTable(spec);
+  const cartesian = spec.type === "bar" || spec.type === "line" || spec.type === "area";
+  const isNew = NEW_TYPES.includes(spec.type);
+  const body = (size: Size) => (isNew ? <ChartBody spec={spec} size={size} /> : <Plot spec={spec} kind={kind} size={size} />);
 
   const toolbar = (inFull: boolean) => (
     <div className="flex items-center gap-0.5">
@@ -380,10 +334,12 @@ export function ChartView({
           ))}
         </div>
       )}
-      <IconButton onClick={() => setView(view === "chart" ? "table" : "chart")} label={view === "chart" ? "Show table" : "Show chart"} active={view === "table"}>
-        <Table2 className="size-4" />
-      </IconButton>
-      {view === "chart" && (!compact || inFull) && (
+      {spec.type !== "table" && (
+        <IconButton onClick={() => setView(view === "chart" ? "table" : "chart")} label={view === "chart" ? "Show table" : "Show chart"} active={view === "table"}>
+          <Table2 className="size-4" />
+        </IconButton>
+      )}
+      {view === "chart" && hasSvg(spec.type) && (!compact || inFull) && (
         <IconButton onClick={() => exportPng((inFull ? fullRef : ref).current!, spec)} label="Download PNG">
           <Download className="size-4" />
         </IconButton>
@@ -440,7 +396,7 @@ export function ChartView({
       <div className={`overflow-hidden rounded-xl border border-line bg-panel shadow-sm ${compact ? "h-full" : ""}`}>
         {header(false)}
         <div className="px-2 pb-3 pt-2" ref={ref}>
-          {view === "chart" ? <Plot spec={spec} kind={kind} size={compact ? "compact" : "normal"} /> : <div className="px-2"><DataTable table={table} name={spec.title} /></div>}
+          {view === "chart" ? body(compact ? "compact" : "normal") : <div className="px-2"><DataTable table={table} name={spec.title} /></div>}
         </div>
       </div>
       {full && (
@@ -448,7 +404,7 @@ export function ChartView({
           <div className="max-h-full w-full max-w-6xl overflow-auto rounded-2xl border border-line bg-panel shadow-2xl" onClick={(e) => e.stopPropagation()}>
             {header(true)}
             <div className="px-2 pb-4 pt-2" ref={fullRef}>
-              {view === "chart" ? <Plot spec={spec} kind={kind} size="tall" /> : <div className="px-2"><DataTable table={table} name={spec.title} /></div>}
+              {view === "chart" ? body("tall") : <div className="px-2"><DataTable table={table} name={spec.title} /></div>}
             </div>
           </div>
         </div>

@@ -2,7 +2,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { addDays, type ChartSource, ChartSpec, inferDates } from "./chartTool";
+import { applyRows } from "./chartData";
+import { addDays, type ChartSource, ChartSpec, inferDates, requiredColumns } from "./chartTool";
 import { parseTable } from "./events";
 import { connectMcp } from "./mcpClient";
 
@@ -143,12 +144,6 @@ function withWindow(source: ChartSource, win?: DateRange) {
   return JSON.parse(out) as Record<string, unknown>;
 }
 
-function toNumber(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 // One MCP client shared by all widget refreshes. The MCP server is stateless, so
 // after the first handshake each refresh is a single request (this matters for
 // the MCP server's per-key rate limit when a dashboard has many widgets).
@@ -174,24 +169,23 @@ async function callTool(name: string, args: Record<string, unknown>) {
   }
 }
 
-export async function runSource(source: ChartSource, win?: DateRange) {
+/** Re-run a chart's query and rebuild its data. */
+/** How many query rows each chart type keeps (the rest are left off). */
+const ROW_LIMIT: Record<ChartSpec["type"], number> = { bar: 200, line: 200, area: 200, pie: 200, combo: 200, funnel: 200, table: 200, scatter: 500, heatmap: 1500, sankey: 1000 };
+
+export async function runChart(spec: ChartSpec, source: ChartSource, win?: DateRange) {
+  const need = requiredColumns(spec, source);
+  if (typeof need === "string") throw new Error(`This chart can't be refreshed: ${need}.`);
   const res = await callTool(source.tool, withWindow(source, win));
-    const content = (res.content ?? []) as { type: string; text?: string }[];
-    const text = content.map((c) => c.text ?? "").join("\n");
-    if (res.isError) throw new Error(text || "The query failed.");
-    const table = parseTable(res.structuredContent) ?? parseTable(safeJson(text));
-    if (!table) throw new Error("The tool did not return a table.");
-    const missing = [source.label_column, ...source.value_columns.map((c) => c.column)].filter(
-      (c) => !table.columns.includes(c),
-    );
-    if (missing.length) throw new Error(`The result has no column ${missing.map((m) => `"${m}"`).join(", ")}.`);
-    const rows = table.rows.slice(0, 200);
-    return {
-      labels: rows.map((r) => String(r[source.label_column] ?? "—").slice(0, 80)),
-      series: source.value_columns.map((c) => ({ name: c.name, values: rows.map((r) => toNumber(r[c.column])) })),
-      rowCount: table.rowCount,
-      truncated: table.truncated || table.rows.length > 200,
-    };
+  const content = (res.content ?? []) as { type: string; text?: string }[];
+  const text = content.map((c) => c.text ?? "").join("\n");
+  if (res.isError) throw new Error(text || "The query failed.");
+  const table = parseTable(res.structuredContent) ?? parseTable(safeJson(text));
+  if (!table) throw new Error("The tool did not return a table.");
+  const missing = need.filter((c) => !table.columns.includes(c));
+  if (missing.length) throw new Error(`The result has no column ${missing.map((m) => `"${m}"`).join(", ")}.`);
+  const fresh = applyRows(spec, source, table.rows);
+  return { spec: fresh, rowCount: table.rowCount, truncated: table.truncated || table.rows.length > ROW_LIMIT[spec.type] };
 }
 
 function safeJson(text: string) {
@@ -204,14 +198,14 @@ function safeJson(text: string) {
 
 // Short cache so a dashboard opened in several tabs doesn't hit the database repeatedly.
 const CACHE_MS = 30_000;
-const cache = new Map<string, { at: number; data: Awaited<ReturnType<typeof runSource>> }>();
+const cache = new Map<string, { at: number; data: Awaited<ReturnType<typeof runChart>> }>();
 
 export async function widgetData(w: Widget, range?: DateRange, fresh = false) {
   const win = effectiveWindow(w, range);
   const key = `${w.id}|${w.updatedAt}|${win?.from ?? ""}|${win?.to ?? ""}`;
   const hit = cache.get(key);
   if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return { ...hit.data, fetchedAt: hit.at, window: win };
-  const data = await runSource(inferDates(w.spec.source), win);
+  const data = await runChart(w.spec, inferDates(w.spec.source), win);
   const at = Date.now();
   cache.set(key, { at, data });
   if (cache.size > 500) cache.delete(cache.keys().next().value!);

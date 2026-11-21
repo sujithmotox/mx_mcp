@@ -11,7 +11,7 @@ import {
   type Widget,
   type WidgetData,
 } from "@/lib/dashboard";
-import { inferDates } from "@/lib/chartTool";
+import { inferDates, isSeriesType } from "@/lib/chartTool";
 import { PinDialog } from "./PinDialog";
 import { WidgetCard } from "./WidgetCard";
 
@@ -244,6 +244,7 @@ export function Dashboard({
           mode="edit"
           initial={{ title: editing.title, size: editing.size, display: editing.display, numberMode: editing.numberMode, refresh: editing.refresh, rollDates: editing.rollDates !== false }}
           hasDates={Boolean(inferDates(editing.spec.source).date_from)}
+          allowNumber={isSeriesType(editing.spec.type)}
           onClose={() => setEditing(null)}
           onSubmit={async (s) => {
             const { widget } = await api.update(editing.id, s);

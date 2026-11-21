@@ -23,6 +23,8 @@
   --series-1: #2a78d6; /* close to the logo blue #006cb5 */ --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
   --series-5: #e87ba4; --series-6: #008300; --series-7: #6250d6; --series-8: #e34948;
   --below: #b9b8b2;
+  /* Sequential scale (heat map, shaded table): one blue, light -> dark. */
+  --seq-lo: #e6f0fd; --seq-hi: #0d366b; --seq-ink-lo: #1a1a1a; --seq-ink-hi: #ffffff;
   color-scheme: light;
 }
 .dark {
@@ -41,6 +43,8 @@
   --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
   --series-5: #d55181; --series-6: #0ca30c; --series-7: #9085e9; --series-8: #e66767;
   --below: #5d5d63;
+  /* Dark mode keeps "more = stronger": low values sit near the surface, high values are bright. */
+  --seq-lo: #1c2b40; --seq-hi: #a9cdf7; --seq-ink-lo: #ececec; --seq-ink-hi: #0b1b30;
   color-scheme: dark;
 }
 

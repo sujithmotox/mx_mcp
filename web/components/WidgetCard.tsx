@@ -14,9 +14,9 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts";
-import type { ChartSpec } from "@/lib/chartTool";
+import { type ChartSpec, isSeriesType } from "@/lib/chartTool";
 import { api, type DateRange, formatValue, formatWindow, REFRESH_MS, timeAgo, type Widget, type WidgetData } from "@/lib/dashboard";
-import { formatDate } from "@/lib/format";
+import { isEmpty } from "@/lib/chartData";
 import { ChartView } from "./ChartView";
 
 export type WidgetActions = {
@@ -163,24 +163,24 @@ function Status({ data, loading, dateFiltered, rangeActive }: { data?: WidgetDat
           Not date-filtered
         </span>
       )}
-      {data?.truncated && <span>First 200 rows</span>}
+      {data?.truncated && <span>Not all rows shown</span>}
     </div>
   );
 }
 
 function toSpec(widget: Widget, data: WidgetData): ChartSpec {
-  const { source: _s, ...base } = widget.spec;
-  return { ...base, title: widget.title, labels: data.labels.map((l) => formatDate(l) ?? l), series: data.series };
+  const { source: _s, ...base } = data.spec;
+  return { ...base, title: widget.title };
 }
 
 function NumberTile({ widget, data }: { widget: Widget; data: WidgetData }) {
-  const s = data.series[0];
+  const s = data.spec.series[0] ?? { name: "", values: [] };
   const vals = s.values;
   const nonNull = vals.filter((v): v is number => v !== null);
   const value = widget.numberMode === "total" ? nonNull.reduce((a, b) => a + b, 0) : (nonNull[nonNull.length - 1] ?? null);
   const prev = widget.numberMode === "last" && nonNull.length > 1 ? nonNull[nonNull.length - 2] : null;
   const delta = value !== null && prev ? ((value - prev) / Math.abs(prev)) * 100 : null;
-  const lastLabel = data.labels[data.labels.length - 1];
+  const lastLabel = data.spec.labels[data.spec.labels.length - 1];
   const points = vals.map((v, i) => ({ i, v }));
   return (
     <div className="flex h-full flex-col justify-between gap-2">
@@ -191,7 +191,7 @@ function NumberTile({ widget, data }: { widget: Widget; data: WidgetData }) {
         <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted">
           <span>
             {s.name}
-            {widget.numberMode === "last" && lastLabel ? ` · ${formatDate(lastLabel) ?? lastLabel}` : widget.numberMode === "total" ? " · total" : ""}
+            {widget.numberMode === "last" && lastLabel ? ` · ${lastLabel}` : widget.numberMode === "total" ? " · total" : ""}
           </span>
           {delta !== null && Number.isFinite(delta) && (
             <span className={`inline-flex items-center font-medium ${delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-danger"}`}>
@@ -262,14 +262,14 @@ export function WidgetCard({
       </Shell>
     );
 
-  if (!data.labels.length)
+  if (isEmpty(data.spec))
     return (
       <Shell title={widget.title} subtitle={status} actions={<>{handle}{menu}</>}>
         <p className="flex min-h-24 items-center text-sm text-muted">No data for this period.</p>
       </Shell>
     );
 
-  if (widget.display === "number")
+  if (widget.display === "number" && isSeriesType(widget.spec.type))
     return (
       <Shell title={widget.title} subtitle={status} actions={<>{handle}{menu}</>}>
         <NumberTile widget={widget} data={data} />

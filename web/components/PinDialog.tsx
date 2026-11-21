@@ -38,7 +38,10 @@ export function PinDialog({
   onSubmit,
   onClose,
   hasDates,
+  allowNumber = true,
 }: {
+  /** Only bar/line/area/pie/combo/funnel charts can become a number tile. */
+  allowNumber?: boolean;
   /** The chart's query uses fixed dates, so they can move forward each day. */
   hasDates?: boolean;
   mode: "pin" | "edit";
@@ -97,7 +100,7 @@ export function PinDialog({
           />
         </Field>
 
-        <Field label="Show as">
+        {allowNumber && <Field label="Show as">
           <Segmented
             value={s.display}
             onChange={(v) => setS((p) => ({ ...p, display: v, size: v === "number" && p.size === "lg" ? "sm" : p.size }))}
@@ -106,9 +109,9 @@ export function PinDialog({
               { value: "number", label: "Number tile" },
             ]}
           />
-        </Field>
+        </Field>}
 
-        {s.display === "number" && (
+        {allowNumber && s.display === "number" && (
           <Field label="Number" hint="Uses the first series. The small line under it shows the trend.">
             <Segmented
               value={s.numberMode}

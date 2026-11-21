@@ -10,8 +10,8 @@ import {
   saveConversations,
   type Turn,
 } from "@/lib/conversation";
-import { type ChartSpec, inferDates } from "@/lib/chartTool";
-import { api, dataAsCsv, type Widget, type WidgetData, type WidgetSettings } from "@/lib/dashboard";
+import { type ChartSpec, inferDates, isSeriesType } from "@/lib/chartTool";
+import { api, specToCsv, type Widget, type WidgetData, type WidgetSettings } from "@/lib/dashboard";
 import type { ChatEvent } from "@/lib/events";
 import { type Attachment, imagesFrom, MAX_IMAGES, prepareImage, uploadImage } from "@/lib/images";
 import { AssistantTurn, UserBubble } from "./AssistantTurn";
@@ -28,7 +28,7 @@ function contextFor(w: Widget, d: WidgetData): AskContext {
     title: w.title,
     text:
       `[Context: the user is asking about the dashboard chart "${w.title}". ` +
-      `It comes from ${src.tool} with ${JSON.stringify(src.arguments)}. Its current data (CSV):\n${dataAsCsv(d.labels, d.series)}]`,
+      `It comes from ${src.tool} with ${JSON.stringify(src.arguments)}. Its current data (CSV):\n${specToCsv(d.spec)}]`,
   };
 }
 
@@ -484,13 +484,14 @@ export function App() {
           mode="pin"
           initial={{
             title: pinning.spec.title,
-            size: pinning.spec.horizontal || pinning.spec.labels.length > 14 ? "lg" : "md",
+            size: pinning.spec.horizontal || pinning.spec.labels.length > 14 || ["heatmap", "sankey", "table", "scatter"].includes(pinning.spec.type) ? "lg" : "md",
             display: "chart",
             numberMode: "last",
             refresh: "open",
             rollDates: true,
           }}
           hasDates={Boolean(pinning.spec.source && inferDates(pinning.spec.source).date_from)}
+          allowNumber={isSeriesType(pinning.spec.type)}
           onClose={() => setPinning(null)}
           onSubmit={pin}
         />

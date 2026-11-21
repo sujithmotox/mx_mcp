@@ -5,8 +5,8 @@ import type { DateRange, Widget, WidgetSettings } from "./widgets";
 export type { DateRange, Widget, WidgetSettings };
 
 export type WidgetData = {
-  labels: string[];
-  series: { name: string; values: (number | null)[] }[];
+  /** The chart with today's data filled in. */
+  spec: ChartSpec;
   rowCount: number;
   truncated: boolean;
   fetchedAt: number;
@@ -129,14 +129,4 @@ export function formatWindow(w: DateRange) {
   return `${fd} ${MON[fm - 1]} ${fy} – ${td} ${MON[tm - 1]} ${ty}`;
 }
 
-/** A short CSV of the widget's current data, for "Ask about this". */
-export function dataAsCsv(labels: string[], series: WidgetData["series"], max = 60) {
-  const esc = (v: unknown) => {
-    const s = String(v ?? "");
-    return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
-  };
-  const lines = [["label", ...series.map((s) => s.name)].map(esc).join(",")];
-  labels.slice(0, max).forEach((l, i) => lines.push([l, ...series.map((s) => s.values[i] ?? "")].map(esc).join(",")));
-  if (labels.length > max) lines.push(`… ${labels.length - max} more rows`);
-  return lines.join("\n");
-}
+export { specToCsv } from "./chartData";
